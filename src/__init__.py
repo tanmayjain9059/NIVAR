@@ -1,0 +1,3 @@
+"""
+Packaged-food label analyzer.
+"""
