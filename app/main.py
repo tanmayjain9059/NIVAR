@@ -5,14 +5,15 @@ This file is intentionally thin. It orchestrates the individual
 OCR, region detection, compliance, food-analysis, and reporting
 modules.
 """
-
 import sys
 from pathlib import Path
 
 import cv2
-import tkinter as tk
-from tkinter import filedialog
 
+import tkinter as tk
+from tkinter import filedialog, messagebox
+
+from PIL import Image, ImageTk
 from src.ocr.preprocessing import preprocess_image
 from src.ocr.engine import run_ocr, ocr_roi
 
@@ -98,6 +99,8 @@ CONFIG = {
 
     # GUI
     "show_gui": True,
+        # OCR
+    "ocr_engine": "paddle",
 }
 
 
@@ -281,9 +284,11 @@ def process_image(file_path, config=CONFIG):
     # --------------------------------------------------------
 
     data, raw_text = run_ocr(
-        processed_gray,
-        config,
-    )
+    processed_gray,
+    config,
+    image_path=file_path,
+    coordinate_scale=config["scale"],
+)
 
     print("\n========== RAW OCR TEXT ==========")
     print(raw_text)
@@ -560,62 +565,360 @@ def process_image(file_path, config=CONFIG):
 
 
 # ============================================================
-# GUI
+# GUI APPLICATION
 # ============================================================
 
-def show_gui(result, config=CONFIG):
+class FoodLabelAnalyzerGUI:
 
-    if not config["show_gui"]:
-        return
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Food Label Analyzer")
+        self.root.geometry("1100x750")
 
-    if result is None:
-        return
+        self.selected_file = None
+        self.preview_image = None
+        self.result = None
 
-    processed = result["processed_color"]
-    regions = result["regions"]
-    rois = result["rois"]
+        self.build_ui()
 
-    preview = draw_regions(
-        processed,
-        regions,
-    )
+    def build_ui(self):
 
-    display = cv2.resize(
-        preview,
-        None,
-        fx=0.20,
-        fy=0.20,
-    )
+        title = tk.Label(
+            self.root,
+            text="FOOD LABEL ANALYZER",
+            font=("Arial", 24, "bold"),
+        )
+        title.pack(pady=(25, 5))
 
-    cv2.imshow(
-        "Detected Food Label Sections",
-        display,
-    )
+        subtitle = tk.Label(
+            self.root,
+            text="Packaged-food label compliance screening",
+            font=("Arial", 12),
+        )
+        subtitle.pack()
 
-    for name, roi in rois.items():
+        controls = tk.Frame(self.root)
+        controls.pack(pady=20)
 
-        if roi is None:
-            continue
+        tk.Button(
+            controls,
+            text="Choose Image",
+            command=self.choose_image,
+            font=("Arial", 12, "bold"),
+            padx=20,
+            pady=8,
+        ).pack(side="left", padx=10)
 
-        display_roi = cv2.resize(
-            roi,
-            None,
-            fx=0.35,
-            fy=0.35,
+        self.analyze_button = tk.Button(
+            controls,
+            text="Analyze Label",
+            command=self.analyze,
+            font=("Arial", 12, "bold"),
+            padx=20,
+            pady=8,
+            state="disabled",
+        )
+        self.analyze_button.pack(side="left", padx=10)
+
+        self.status = tk.Label(
+            self.root,
+            text="No image selected",
+            font=("Arial", 11),
+        )
+        self.status.pack()
+
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(
+            fill="both",
+            expand=True,
+            padx=25,
+            pady=20,
         )
 
-        cv2.imshow(
-            f"{name.title()} ROI",
-            display_roi,
+        image_frame = tk.LabelFrame(
+            main_frame,
+            text="Product Image",
+            padx=10,
+            pady=10,
+        )
+        image_frame.pack(
+            side="left",
+            fill="both",
+            expand=True,
+            padx=(0, 10),
         )
 
-    print(
-        "\nPress any key inside an OpenCV window "
-        "to close the program."
-    )
+        self.image_label = tk.Label(
+            image_frame,
+            text="Choose an image",
+            font=("Arial", 14),
+        )
+        self.image_label.pack(
+            fill="both",
+            expand=True,
+        )
 
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+        result_frame = tk.LabelFrame(
+            main_frame,
+            text="Analysis Results",
+            padx=10,
+            pady=10,
+        )
+        result_frame.pack(
+            side="right",
+            fill="both",
+            expand=True,
+            padx=(10, 0),
+        )
+
+        self.results = tk.Text(
+            result_frame,
+            wrap="word",
+            font=("Arial", 11),
+        )
+        self.results.pack(
+            fill="both",
+            expand=True,
+        )
+
+    def choose_image(self):
+
+        file_path = filedialog.askopenfilename(
+            title="Select Food Label Image",
+            filetypes=[
+                (
+                    "Image files",
+                    "*.jpg *.jpeg *.png *.webp *.JPG *.JPEG *.PNG *.WEBP",
+                ),
+                ("All files", "*.*"),
+            ],
+        )
+
+        if not file_path:
+            return
+
+        self.selected_file = file_path
+
+        self.status.config(
+            text=f"Selected: {Path(file_path).name}"
+        )
+
+        self.analyze_button.config(
+            state="normal"
+        )
+
+        try:
+            image = Image.open(file_path)
+
+            image.thumbnail((450, 500))
+
+            self.preview_image = ImageTk.PhotoImage(image)
+
+            self.image_label.config(
+                image=self.preview_image,
+                text="",
+            )
+
+        except Exception as exc:
+
+            messagebox.showerror(
+                "Image Error",
+                str(exc),
+            )
+
+    def analyze(self):
+
+        if not self.selected_file:
+            return
+
+        self.status.config(
+            text="Analyzing..."
+        )
+
+        self.root.update_idletasks()
+
+        try:
+
+            self.result = process_image(
+                self.selected_file,
+                CONFIG,
+            )
+
+            self.show_results()
+
+            self.status.config(
+                text="Analysis complete",
+            )
+
+        except Exception as exc:
+
+            self.status.config(
+                text="Analysis failed",
+            )
+
+            messagebox.showerror(
+                "Analysis Error",
+                f"{type(exc).__name__}: {exc}",
+            )
+
+        finally:
+
+            self.analyze_button.config(
+                state="normal"
+            )
+
+    def show_results(self):
+
+        structured = self.result[
+            "structured_result"
+        ]
+
+        compliance = structured.get(
+            "legal_metrology_compliance",
+            {},
+        )
+
+        checks = compliance.get(
+            "checks",
+            {},
+        )
+
+        detected = compliance.get(
+            "mandatory_declarations_detected",
+            0,
+        )
+
+        total = compliance.get(
+            "mandatory_declarations_total",
+            0,
+        )
+
+        output = []
+
+        output.append(
+            "LEGAL METROLOGY COMPLIANCE"
+        )
+
+        output.append(
+            "=" * 35
+        )
+
+        output.append(
+            f"Mandatory declarations: {detected}/{total}"
+        )
+
+        output.append("")
+
+        for key, check in checks.items():
+
+            label = check.get(
+                "label",
+                key,
+            )
+
+            status = check.get(
+                "status",
+                "REVIEW",
+            )
+
+            output.append(
+                f"{label}: {status}"
+            )
+
+        output.append("")
+        output.append(
+            "FOOD ANALYSIS"
+        )
+
+        output.append(
+            "=" * 35
+        )
+
+        ingredients = structured.get(
+            "ingredients",
+            [],
+        )
+
+        output.append(
+            "\nIngredients:"
+        )
+
+        if ingredients:
+
+            for ingredient in ingredients:
+                output.append(
+                    f"• {ingredient}"
+                )
+
+        else:
+
+            output.append(
+                "No reliable ingredients detected."
+            )
+
+        allergens = structured.get(
+            "allergens",
+            {},
+        )
+
+        output.append("\nAllergens:")
+
+        output.append(
+            "Contains: "
+            + ", ".join(
+                allergens.get("contains", [])
+            )
+            if allergens.get("contains")
+            else "Contains: None detected"
+        )
+
+        output.append(
+            "May contain: "
+            + ", ".join(
+                allergens.get("may_contain", [])
+            )
+            if allergens.get("may_contain")
+            else "May contain: None detected"
+        )
+
+        nutrition = structured.get(
+            "nutrition",
+            {},
+        )
+
+        output.append("\nNutrition:")
+
+        if nutrition:
+
+            for nutrient, value in nutrition.items():
+
+                output.append(
+                    f"• {nutrient}: "
+                    f"{value.get('value')} "
+                    f"{value.get('unit', '')}"
+                )
+
+        else:
+
+            output.append(
+                "No reliable nutrition values detected."
+            )
+
+        output.append("")
+        output.append(
+            "NOTE: Automated OCR-based first-pass "
+            "screening. Not legal certification."
+        )
+
+        self.results.delete(
+            "1.0",
+            tk.END,
+        )
+
+        self.results.insert(
+            tk.END,
+            "\n".join(output),
+        )
 
 
 # ============================================================
@@ -624,35 +927,32 @@ def show_gui(result, config=CONFIG):
 
 def main():
 
+    # CLI mode
+    #
+    # python3 -m app.main images/IMG_0981.jpeg
+
     if len(sys.argv) > 1:
+
         file_path = sys.argv[1]
-    else:
-        file_path = select_image()
 
-    if not file_path:
-        print("No image selected.")
-        return
-
-    try:
-        result = process_image(
+        process_image(
             file_path,
             CONFIG,
         )
 
-        show_gui(
-            result,
-            CONFIG,
-        )
+        return
 
-    except Exception as exc:
+    # GUI mode
+    #
+    # python3 -m app.main
 
-        print(
-            "\nERROR:",
-            type(exc).__name__,
-            str(exc),
-        )
+    root = tk.Tk()
 
-        raise
+    FoodLabelAnalyzerGUI(
+        root
+    )
+
+    root.mainloop()
 
 
 if __name__ == "__main__":
