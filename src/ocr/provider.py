@@ -1,0 +1,31 @@
+"""
+OCR provider factory.
+
+Keeps the application independent from the OCR implementation.
+"""
+
+from .paddle_engine import PaddleOCREngine
+from .tesseract_engine import TesseractOCREngine
+
+
+def create_ocr_engine(name: str = "paddle"):
+    """
+    Create an OCR engine.
+
+    Supported engines:
+        paddle
+        tesseract
+    """
+
+    name = name.lower().strip()
+
+    if name == "paddle":
+        return PaddleOCREngine()
+
+    if name == "tesseract":
+        return TesseractOCREngine()
+
+    raise ValueError(
+        f"Unsupported OCR engine: {name}"
+    )
+    
