@@ -524,6 +524,7 @@ def process_image(file_path, config=CONFIG):
 
         nutrition = parse_nutrition_text(
             nutrition_text,
+            ocr_data=data,
         )
 
     else:
@@ -548,6 +549,7 @@ def process_image(file_path, config=CONFIG):
     compliance_report = validate_declarations(
         raw_text,
         compliance_text,
+        ocr_data=data,
     )
 
     # --------------------------------------------------------
@@ -571,13 +573,27 @@ def process_image(file_path, config=CONFIG):
     )
 
     print(
-        "Mandatory declarations:",
+        "Verified:",
         compliance_report[
             "mandatory_declarations_detected"
         ],
         "/",
         compliance_report[
             "mandatory_declarations_total"
+        ],
+    )
+
+    print(
+        "Requires review:",
+        compliance_report[
+            "mandatory_declarations_review"
+        ],
+    )
+
+    print(
+        "Not detected:",
+        compliance_report[
+            "mandatory_declarations_missing"
         ],
     )
 
@@ -588,6 +604,22 @@ def process_image(file_path, config=CONFIG):
             f"{key:<35} "
             f"{check['status']}"
         )
+
+    # --------------------------------------------------------
+    # STRUCTURED RESULT
+    # --------------------------------------------------------
+
+    structured_result = build_structured_result(
+        file_path=file_path,
+        nutrition=nutrition,
+        ingredients=ingredients,
+        contains=contains,
+        may_contain=may_contain,
+        compliance_report=compliance_report,
+        nutrients_total=len(NUTRIENTS),
+    )
+
+
 
     # --------------------------------------------------------
     # STRUCTURED RESULT
