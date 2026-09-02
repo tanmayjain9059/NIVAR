@@ -15,7 +15,11 @@ from tkinter import filedialog, messagebox
 
 from PIL import Image, ImageTk
 from src.ocr.preprocessing import preprocess_image
-from src.ocr.engine import run_ocr, ocr_roi
+from src.ocr.engine import (
+    run_ocr, 
+    ocr_roi,
+    extract_text_from_region,
+)
 
 from src.ocr.regions import (
     detect_nutrition_region,
@@ -29,6 +33,7 @@ from src.ocr.regions import (
 from src.food_analysis import (
     NUTRIENTS,
     parse_nutrition_table,
+    parse_nutrition_text,
     parse_ingredients,
     parse_allergens,
 )
@@ -284,11 +289,11 @@ def process_image(file_path, config=CONFIG):
     # --------------------------------------------------------
 
     data, raw_text = run_ocr(
-    processed_gray,
-    config,
-    image_path=file_path,
-    coordinate_scale=config["scale"],
-)
+        processed_gray,
+        config,
+        image_path=file_path,
+        coordinate_scale=config["scale"],
+    )
 
     print("\n========== RAW OCR TEXT ==========")
     print(raw_text)
@@ -407,60 +412,126 @@ def process_image(file_path, config=CONFIG):
         rois["compliance_right"] = (
             compliance_right_roi
         )
-
+    # --------------------------------------------------------
+    # SECTION OCR
+    # --------------------------------------------------------
     # --------------------------------------------------------
     # SECTION OCR
     # --------------------------------------------------------
 
     print("\nReading detected sections...")
 
-    nutrition_text = ocr_roi(
-        rois["nutrition"],
-        config,
-    )
+    engine_name = str(
+        config.get(
+            "ocr_engine",
+            "tesseract",
+        )
+    ).lower().strip()
 
-    ingredients_text = ocr_roi(
-        rois["ingredients"],
-        config,
-    )
+    if engine_name == "paddle":
 
-    allergen_text = ocr_roi(
-        rois["allergens"],
-        config,
-    )
+        # Reuse the single global PaddleOCR result.
+        # Do not run PaddleOCR again for every ROI.
 
-    compliance_left_text = ocr_roi(
-        compliance_left_roi,
-        config,
-    )
+        nutrition_text = extract_text_from_region(
+            data,
+            nutrition_region,
+        )
 
-    compliance_right_text = ocr_roi(
-        compliance_right_roi,
-        config,
-    )
+        ingredients_text = extract_text_from_region(
+            data,
+            ingredients_region,
+        )
 
-    compliance_text = (
-        compliance_left_text
-        + "\n"
-        + compliance_right_text
-    )
+        allergen_text = extract_text_from_region(
+            data,
+            allergen_region,
+        )
 
-    print_sections(
-        nutrition_text,
-        ingredients_text,
-        allergen_text,
-        compliance_left_text,
-        compliance_right_text,
-    )
+        if compliance_region is not None:
 
+            left_region, right_region = (
+                split_region_horizontally(
+                    compliance_region,
+                    config["compliance_split_ratio"],
+                )
+            )
+
+            compliance_left_text = (
+                extract_text_from_region(
+                    data,
+                    left_region,
+                )
+            )
+
+            compliance_right_text = (
+                extract_text_from_region(
+                    data,
+                    right_region,
+                )
+            )
+
+        else:
+
+            compliance_left_text = ""
+            compliance_right_text = ""
+
+        compliance_text = (
+            compliance_left_text
+            + "\n"
+            + compliance_right_text
+        )
+
+    else:
+
+        # Preserve the existing Tesseract ROI behaviour.
+
+        nutrition_text = ocr_roi(
+            rois["nutrition"],
+            config,
+        )
+
+        ingredients_text = ocr_roi(
+            rois["ingredients"],
+            config,
+        )
+
+        allergen_text = ocr_roi(
+            rois["allergens"],
+            config,
+        )
+
+        compliance_left_text = ocr_roi(
+            compliance_left_roi,
+            config,
+        )
+
+        compliance_right_text = ocr_roi(
+            compliance_right_roi,
+            config,
+        )
+
+        compliance_text = (
+            compliance_left_text
+            + "\n"
+            + compliance_right_text
+        )
     # --------------------------------------------------------
     # FOOD ANALYSIS
     # --------------------------------------------------------
 
-    nutrition = parse_nutrition_table(
-        rois["nutrition"],
-        config,
-    )
+    if engine_name == "paddle":
+
+        nutrition = parse_nutrition_text(
+            nutrition_text,
+        )
+
+    else:
+
+        nutrition = parse_nutrition_table(
+            rois["nutrition"],
+            config,
+        )
 
     ingredients = parse_ingredients(
         ingredients_text,

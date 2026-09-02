@@ -4,10 +4,6 @@ Nutrition table extraction from packaged-food labels.
 
 import re
 
-import pytesseract
-
-from src.ocr.preprocessing import prepare_roi_for_ocr
-
 
 NUTRIENTS = [
     "Energy",
@@ -24,158 +20,177 @@ NUTRIENTS = [
 ]
 
 
-def parse_nutrition_table(roi, config):
-    """
-    OCR and parse a cropped nutrition table.
+def _clean_text(text):
+    return re.sub(
+        r"[^a-z]",
+        "",
+        str(text).lower(),
+    )
 
-    This is an OCR-based heuristic parser. Values should be
-    manually verified before being treated as authoritative.
+
+def _is_number_line(text):
+    """
+    Return numeric values if the line represents a
+    nutrition value rather than a percentage/RDA line.
     """
 
-    if roi is None:
+    text = str(text).strip()
+
+    # Ignore percentage lines such as:
+    # 3%
+    # 10%
+    # 5%
+    if "%" in text:
+        return []
+
+    matches = re.findall(
+        r"(?<![a-zA-Z])\d+(?:\.\d+)?",
+        text,
+    )
+
+    return [
+        float(value)
+        for value in matches
+    ]
+
+
+def parse_nutrition_text(text):
+    """
+    Parse nutrition values directly from already extracted OCR text.
+
+    No additional OCR is performed here.
+    """
+
+    if not text:
         return {}
 
-    cleaned = prepare_roi_for_ocr(
-        roi,
-        config,
-    )
-
-    data = pytesseract.image_to_data(
-        cleaned,
-        config=config["roi_ocr_config"],
-        output_type=pytesseract.Output.DATAFRAME,
-    )
-
-    data = data.dropna(subset=["text"])
-
-    data["text"] = (
-        data["text"]
-        .astype(str)
-        .str.strip()
-    )
-
-    data = data[data["text"] != ""].copy()
-
-    for col in ("left", "top", "width", "height"):
-        data[col] = data[col].astype(int)
-
-    number_tokens = []
-
-    for _, row in data.iterrows():
-
-        for number in re.findall(
-            r"\d+(?:\.\d+)?",
-            str(row["text"]),
-        ):
-
-            try:
-                value = float(number)
-            except ValueError:
-                continue
-
-            number_tokens.append(
-                {
-                    "value": value,
-                    "x": int(row["left"]),
-                    "y": int(row["top"]),
-                    "right": int(row["left"]) + int(row["width"]),
-                    "bottom": int(row["top"]) + int(row["height"]),
-                }
-            )
+    lines = [
+        line.strip()
+        for line in str(text).splitlines()
+        if line.strip()
+    ]
 
     results = {}
 
-    for nutrient in NUTRIENTS:
+    # Process the OCR output row-by-row.
+    for index, line in enumerate(lines):
 
-        target = re.sub(
-            r"[^a-z]",
-            "",
-            nutrient.lower(),
+        cleaned_line = _clean_text(line)
+
+        matched_nutrient = None
+
+        # IMPORTANT:
+        # Check longer/more specific nutrient names first.
+        # Otherwise "Total Fat" could interfere with
+        # "Saturated Fat" etc.
+        ordered_nutrients = sorted(
+            NUTRIENTS,
+            key=lambda item: len(_clean_text(item)),
+            reverse=True,
         )
 
-        matches = [
-            row
-            for _, row in data.iterrows()
-            if target
-            in re.sub(
-                r"[^a-z]",
-                "",
-                str(row["text"]).lower(),
-            )
+        for nutrient in ordered_nutrients:
+
+            target = _clean_text(nutrient)
+
+            if cleaned_line == target:
+                matched_nutrient = nutrient
+                break
+
+            # Handle labels such as:
+            # Energy(kcal)
+            # Total Fat (g)
+            # Cholesterol (mg)
+            if cleaned_line.startswith(target):
+
+                remainder = cleaned_line[len(target):]
+
+                if remainder in (
+                    "",
+                    "g",
+                    "mg",
+                    "kcal",
+                    "g100g",
+                    "mg100g",
+                ) or (
+                    "g" in remainder
+                    or "mg" in remainder
+                    or "kcal" in remainder
+                ):
+                    matched_nutrient = nutrient
+                    break
+
+        if matched_nutrient is None:
+            continue
+
+        # ----------------------------------------------------
+        # Look for value on the same line first.
+        # ----------------------------------------------------
+
+        values = _is_number_line(line)
+
+        # For labels such as "Energy(kcal)", the number
+        # normally isn't on the same line.
+        values = [
+            value
+            for value in values
+            if value >= 0
         ]
 
-        if not matches:
-            continue
+        value = None
 
-        nutrient_row = matches[0]
+        # ----------------------------------------------------
+        # Value is normally on the next OCR line.
+        # ----------------------------------------------------
 
-        nutrient_y = int(
-            nutrient_row["top"]
-        )
+        if not values:
 
-        nutrient_right = (
-            int(nutrient_row["left"])
-            + int(nutrient_row["width"])
-        )
-
-        candidates = []
-
-        for number in number_tokens:
-
-            vertical_distance = abs(
-                number["y"] - nutrient_y
-            )
-
-            if (
-                vertical_distance
-                > config["nutrient_vertical_tolerance"]
+            for next_index in range(
+                index + 1,
+                min(index + 3, len(lines)),
             ):
-                continue
 
-            if number["x"] <= nutrient_right:
-                continue
+                candidate_line = lines[next_index]
 
-            horizontal_distance = (
-                number["x"] - nutrient_right
-            )
+                # Never cross into another nutrient row.
+                candidate_cleaned = _clean_text(
+                    candidate_line
+                )
 
-            if (
-                horizontal_distance
-                > config["nutrient_horizontal_max"]
-            ):
-                continue
+                is_another_nutrient = any(
+                    candidate_cleaned == _clean_text(other)
+                    or candidate_cleaned.startswith(
+                        _clean_text(other)
+                    )
+                    for other in NUTRIENTS
+                    if other != matched_nutrient
+                )
 
-            score = (
-                vertical_distance * 3
-                + horizontal_distance
-            )
+                if is_another_nutrient:
+                    break
 
-            candidates.append(
-                {
-                    "value": number["value"],
-                    "score": score,
-                }
-            )
+                candidate_values = _is_number_line(
+                    candidate_line
+                )
 
-        if not candidates:
+                if candidate_values:
+                    value = candidate_values[0]
+                    break
+
+        else:
+            value = values[0]
+
+        if value is None:
             continue
 
-        candidates.sort(
-            key=lambda item: item["score"]
-        )
+        # ----------------------------------------------------
+        # Units
+        # ----------------------------------------------------
 
-        best = candidates[0]
-
-        if (
-            best["score"]
-            > config["nutrient_score_threshold"]
-        ):
-            continue
-
-        if nutrient == "Energy":
+        if matched_nutrient == "Energy":
             unit = "kcal"
 
-        elif nutrient in (
+        elif matched_nutrient in (
             "Sodium",
             "Cholesterol",
         ):
@@ -184,9 +199,36 @@ def parse_nutrition_table(roi, config):
         else:
             unit = "g"
 
-        results[nutrient] = {
-            "value": best["value"],
+        results[matched_nutrient] = {
+            "value": value,
             "unit": unit,
         }
 
     return results
+
+
+def parse_nutrition_table(roi, config):
+    """
+    Backward-compatible Tesseract implementation.
+
+    PaddleOCR should use parse_nutrition_text() instead.
+    """
+
+    if roi is None:
+        return {}
+
+    import pytesseract
+
+    from src.ocr.preprocessing import prepare_roi_for_ocr
+
+    cleaned = prepare_roi_for_ocr(
+        roi,
+        config,
+    )
+
+    text = pytesseract.image_to_string(
+        cleaned,
+        config=config["roi_ocr_config"],
+    )
+
+    return parse_nutrition_text(text)

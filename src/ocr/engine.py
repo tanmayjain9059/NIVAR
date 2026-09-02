@@ -439,3 +439,108 @@ def clean_word(text):
         "",
         str(text).lower(),
     )
+
+def extract_text_from_region(data, region, min_overlap=0.20):
+    """
+    Extract OCR text from an already-detected region.
+
+    This reuses the global OCR result instead of running OCR
+    again on the cropped region.
+
+    Parameters
+    ----------
+    data:
+        OCR DataFrame containing text and bounding boxes.
+
+    region:
+        Region dictionary:
+        {
+            "x": ...,
+            "y": ...,
+            "w": ...,
+            "h": ...
+        }
+
+    min_overlap:
+        Minimum fraction of an OCR box that must overlap
+        the region for the text to be included.
+    """
+
+    if data is None or data.empty or region is None:
+        return ""
+
+    x1 = int(region["x"])
+    y1 = int(region["y"])
+    x2 = x1 + int(region["w"])
+    y2 = y1 + int(region["h"])
+
+    selected = []
+
+    for _, row in data.iterrows():
+
+        try:
+            left = int(row["left"])
+            top = int(row["top"])
+            right = int(row["right"])
+            bottom = int(row["bottom"])
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            continue
+
+        overlap_x = max(
+            0,
+            min(right, x2) - max(left, x1),
+        )
+
+        overlap_y = max(
+            0,
+            min(bottom, y2) - max(top, y1),
+        )
+
+        overlap_area = (
+            overlap_x * overlap_y
+        )
+
+        text_area = max(
+            1,
+            (right - left)
+            * (bottom - top),
+        )
+
+        overlap_ratio = (
+            overlap_area / text_area
+        )
+
+        if overlap_ratio < min_overlap:
+            continue
+
+        text = str(
+            row["text"]
+        ).strip()
+
+        if not text:
+            continue
+
+        selected.append(
+            (
+                top,
+                left,
+                text,
+            )
+        )
+
+    # Restore approximate reading order.
+    selected.sort(
+        key=lambda item: (
+            item[0],
+            item[1],
+        )
+    )
+
+    return "\n".join(
+        item[2]
+        for item in selected
+    )
