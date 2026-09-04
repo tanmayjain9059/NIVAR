@@ -4,9 +4,10 @@ REST API for the packaged-food label analyzer.
 Frontend clients such as Android and Web should communicate
 with this API instead of directly importing the analysis engine.
 """
-
+from fastapi import FastAPI
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -23,7 +24,16 @@ app = FastAPI(
     ),
     version="1.0.0",
 )
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 ALLOWED_EXTENSIONS = {
     ".jpg",
