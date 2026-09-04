@@ -113,6 +113,40 @@ def _paddle_result_to_dataframe(result):
     )
 
 
+def build_ocr_summary(data, engine_name):
+    """Build the compact OCR metadata stored with a product scan."""
+
+    line_count = 0
+    confidences = []
+
+    if data is not None and not getattr(data, "empty", True):
+        line_count = len(data)
+
+        if "conf" in data.columns:
+            confidences = pd.to_numeric(
+                data["conf"],
+                errors="coerce",
+            ).dropna()
+            confidences = confidences[
+                confidences >= 0
+            ].tolist()
+
+    average_confidence = (
+        round(
+            sum(confidences) / len(confidences),
+            4,
+        )
+        if confidences
+        else None
+    )
+
+    return {
+        "engine": str(engine_name),
+        "line_count": line_count,
+        "average_confidence": average_confidence,
+    }
+
+
 # ============================================================
 # TESSERACT
 # ============================================================

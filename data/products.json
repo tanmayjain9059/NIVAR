@@ -1,0 +1,453 @@
+{
+  "products": {
+    "PROD-63045662AEB7": {
+      "product_id": "PROD-63045662AEB7",
+      "product_name": "Test Product",
+      "brand": "Test Brand",
+      "barcode": "8901234567890",
+      "manufacturer": "Test Manufacturer",
+      "created_at": "2026-09-02T23:09:00.653095",
+      "updated_at": "2026-09-02T23:33:48.034604",
+      "scans": [
+        {
+          "scan_id": "SCAN-E62D76FDD4A2",
+          "product_id": "PROD-63045662AEB7",
+          "image_path": "/var/folders/76/6my05t9j6x796330fv5xlqn80000gp/T/tmpb4mvz163.jpg",
+          "timestamp": "2026-09-02T23:15:40.528393",
+          "image_quality": null,
+          "ocr": null,
+          "compliance": {
+            "overall_status": "REVIEW",
+            "checks": {
+              "manufacturer_packer_importer": {
+                "label": "Name & address of manufacturer/packer/importer",
+                "detected": true,
+                "matched_text": "Marketed By",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "Imported and Marketed By: Kellogg India Pvt. Ltd., Pl No.",
+                  "confidence": 0.8848319053649902,
+                  "bbox": {
+                    "x1": 488,
+                    "y1": 2793,
+                    "x2": 1778,
+                    "y2": 2952
+                  }
+                }
+              },
+              "net_quantity": {
+                "label": "Net quantity (weight/volume/number)",
+                "detected": true,
+                "matched_text": "Net Weight",
+                "status": "REVIEW",
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "manufacture_date": {
+                "label": "Month & year of manufacture/packing",
+                "detected": false,
+                "matched_text": null,
+                "status": "NOT_FOUND"
+              },
+              "mrp": {
+                "label": "Retail Sale Price (MRP), inclusive of taxes",
+                "detected": true,
+                "matched_text": "MRP",
+                "status": "REVIEW",
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "consumer_care": {
+                "label": "Consumer care details (contact for complaints)",
+                "detected": true,
+                "matched_text": "1800-22-3500",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "Or cal:1800-22-3500",
+                  "confidence": 0.900566816329956,
+                  "bbox": {
+                    "x1": 428,
+                    "y1": 4508,
+                    "x2": 1407,
+                    "y2": 4832
+                  }
+                }
+              },
+              "country_of_origin": {
+                "label": "Country of origin (mandatory only for imported goods)",
+                "detected": true,
+                "matched_text": "COUNTRY OF ORIGIN - THAILAND\nManuactured",
+                "conditional": true,
+                "status": "FOUND",
+                "evidence": {
+                  "text": "COUNTRY OF ORIGIN - THAILAND",
+                  "confidence": 0.9989675879478455,
+                  "bbox": {
+                    "x1": 495,
+                    "y1": 2468,
+                    "x2": 1310,
+                    "y2": 2592
+                  }
+                }
+              },
+              "generic_name": {
+                "label": "Generic/common name of the commodity",
+                "detected": null,
+                "matched_text": null,
+                "status": "REVIEW",
+                "note": "Requires product-name/semantic extraction and manual verification."
+              }
+            },
+            "mandatory_declarations_detected": 2,
+            "mandatory_declarations_total": 5,
+            "mandatory_declarations_review": 2,
+            "mandatory_declarations_missing": 1,
+            "disclaimer": "Automated OCR-based first-pass check. NOT DETECTED does not confirm absence on the physical package. Verify manually before making any compliance claim."
+          }
+        },
+        {
+          "scan_id": "SCAN-6567AFA83280",
+          "product_id": "PROD-63045662AEB7",
+          "image_path": "data/product_images/PROD-63045662AEB7/SCAN-6567AFA83280.jpg",
+          "timestamp": "2026-09-02T23:18:33.037578",
+          "image_quality": null,
+          "ocr": null,
+          "compliance": {
+            "overall_status": "REVIEW",
+            "checks": {
+              "manufacturer_packer_importer": {
+                "label": "Name & address of manufacturer/packer/importer",
+                "detected": true,
+                "matched_text": "Marketed By",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "Imported and Marketed By: Kellogg India Pvt. Ltd., Pl No.",
+                  "confidence": 0.8848319053649902,
+                  "bbox": {
+                    "x1": 488,
+                    "y1": 2793,
+                    "x2": 1778,
+                    "y2": 2952
+                  }
+                }
+              },
+              "net_quantity": {
+                "label": "Net quantity (weight/volume/number)",
+                "detected": true,
+                "matched_text": "Net Weight",
+                "status": "REVIEW",
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "manufacture_date": {
+                "label": "Month & year of manufacture/packing",
+                "detected": false,
+                "matched_text": null,
+                "status": "NOT_FOUND"
+              },
+              "mrp": {
+                "label": "Retail Sale Price (MRP), inclusive of taxes",
+                "detected": true,
+                "matched_text": "MRP",
+                "status": "REVIEW",
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "consumer_care": {
+                "label": "Consumer care details (contact for complaints)",
+                "detected": true,
+                "matched_text": "1800-22-3500",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "Or cal:1800-22-3500",
+                  "confidence": 0.900566816329956,
+                  "bbox": {
+                    "x1": 428,
+                    "y1": 4508,
+                    "x2": 1407,
+                    "y2": 4832
+                  }
+                }
+              },
+              "country_of_origin": {
+                "label": "Country of origin (mandatory only for imported goods)",
+                "detected": true,
+                "matched_text": "COUNTRY OF ORIGIN - THAILAND\nManuactured",
+                "conditional": true,
+                "status": "FOUND",
+                "evidence": {
+                  "text": "COUNTRY OF ORIGIN - THAILAND",
+                  "confidence": 0.9989675879478455,
+                  "bbox": {
+                    "x1": 495,
+                    "y1": 2468,
+                    "x2": 1310,
+                    "y2": 2592
+                  }
+                }
+              },
+              "generic_name": {
+                "label": "Generic/common name of the commodity",
+                "detected": null,
+                "matched_text": null,
+                "status": "REVIEW",
+                "note": "Requires product-name/semantic extraction and manual verification."
+              }
+            },
+            "mandatory_declarations_detected": 2,
+            "mandatory_declarations_total": 5,
+            "mandatory_declarations_review": 2,
+            "mandatory_declarations_missing": 1,
+            "disclaimer": "Automated OCR-based first-pass check. NOT DETECTED does not confirm absence on the physical package. Verify manually before making any compliance claim."
+          }
+        },
+        {
+          "scan_id": "SCAN-2C10EA309748",
+          "product_id": "PROD-63045662AEB7",
+          "image_path": "data/product_images/PROD-63045662AEB7/SCAN-2C10EA309748.jpg",
+          "timestamp": "2026-09-02T23:33:48.034438",
+          "image_quality": {
+            "accepted": true,
+            "score": 99.1,
+            "checks": {
+              "resolution": {
+                "score": 100.0,
+                "measure": {
+                  "width": 1462,
+                  "height": 4000
+                },
+                "status": "PASS"
+              },
+              "blur": {
+                "score": 100.0,
+                "measure": 371.92,
+                "status": "PASS"
+              },
+              "brightness": {
+                "score": 95.3,
+                "measure": 109.6,
+                "status": "PASS"
+              },
+              "contrast": {
+                "score": 100.0,
+                "measure": 64.04,
+                "status": "PASS"
+              }
+            },
+            "rejection_reasons": []
+          },
+          "ocr": null,
+          "compliance": {
+            "overall_status": "REVIEW",
+            "checks": {
+              "manufacturer_packer_importer": {
+                "label": "Name & address of manufacturer/packer/importer",
+                "detected": true,
+                "matched_text": "Marketed By",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "Imported and Marketed By: Kellogg India Pvt. Ltd., Pl No.",
+                  "confidence": 0.8848319053649902,
+                  "bbox": {
+                    "x1": 488,
+                    "y1": 2793,
+                    "x2": 1778,
+                    "y2": 2952
+                  }
+                }
+              },
+              "net_quantity": {
+                "label": "Net quantity (weight/volume/number)",
+                "detected": true,
+                "matched_text": "Net Weight",
+                "status": "REVIEW",
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "manufacture_date": {
+                "label": "Month & year of manufacture/packing",
+                "detected": false,
+                "matched_text": null,
+                "status": "NOT_FOUND"
+              },
+              "mrp": {
+                "label": "Retail Sale Price (MRP), inclusive of taxes",
+                "detected": true,
+                "matched_text": "MRP",
+                "status": "REVIEW",
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "consumer_care": {
+                "label": "Consumer care details (contact for complaints)",
+                "detected": true,
+                "matched_text": "1800-22-3500",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "Or cal:1800-22-3500",
+                  "confidence": 0.900566816329956,
+                  "bbox": {
+                    "x1": 428,
+                    "y1": 4508,
+                    "x2": 1407,
+                    "y2": 4832
+                  }
+                }
+              },
+              "country_of_origin": {
+                "label": "Country of origin (mandatory only for imported goods)",
+                "detected": true,
+                "matched_text": "COUNTRY OF ORIGIN - THAILAND\nManuactured",
+                "conditional": true,
+                "status": "FOUND",
+                "evidence": {
+                  "text": "COUNTRY OF ORIGIN - THAILAND",
+                  "confidence": 0.9989675879478455,
+                  "bbox": {
+                    "x1": 495,
+                    "y1": 2468,
+                    "x2": 1310,
+                    "y2": 2592
+                  }
+                }
+              },
+              "generic_name": {
+                "label": "Generic/common name of the commodity",
+                "detected": null,
+                "matched_text": null,
+                "status": "REVIEW",
+                "note": "Requires product-name/semantic extraction and manual verification."
+              }
+            },
+            "mandatory_declarations_detected": 2,
+            "mandatory_declarations_total": 5,
+            "mandatory_declarations_review": 2,
+            "mandatory_declarations_missing": 1,
+            "disclaimer": "Automated OCR-based first-pass check. NOT DETECTED does not confirm absence on the physical package. Verify manually before making any compliance claim."
+          }
+        }
+      ]
+    },
+    "PROD-10FBF4EB4CC0": {
+      "product_id": "PROD-10FBF4EB4CC0",
+      "product_name": "OCR Persistence Test",
+      "brand": "Test Brand",
+      "barcode": null,
+      "manufacturer": null,
+      "created_at": "2026-09-03T21:57:10.258461",
+      "updated_at": "2026-09-03T21:57:10.258477",
+      "scans": []
+    },
+    "PROD-CEDA8D643438": {
+      "product_id": "PROD-CEDA8D643438",
+      "product_name": "OCR Persistence Test",
+      "brand": "Test Brand",
+      "barcode": null,
+      "manufacturer": null,
+      "created_at": "2026-09-03T21:57:17.858859",
+      "updated_at": "2026-09-03T21:57:59.843892",
+      "scans": [
+        {
+          "scan_id": "SCAN-E69346941835",
+          "product_id": "PROD-CEDA8D643438",
+          "image_path": "data/product_images/PROD-CEDA8D643438/SCAN-E69346941835.jpg",
+          "timestamp": "2026-09-03T21:57:59.843719",
+          "image_quality": {
+            "accepted": true,
+            "score": 89.5,
+            "checks": {
+              "resolution": {
+                "score": 81.2,
+                "measure": {
+                  "width": 923,
+                  "height": 2000
+                },
+                "status": "PASS"
+              },
+              "blur": {
+                "score": 100.0,
+                "measure": 618.64,
+                "status": "PASS"
+              },
+              "brightness": {
+                "score": 79.2,
+                "measure": 220.14,
+                "status": "PASS"
+              },
+              "contrast": {
+                "score": 91.6,
+                "measure": 51.28,
+                "status": "PASS"
+              }
+            },
+            "rejection_reasons": []
+          },
+          "ocr": {
+            "engine": "paddle",
+            "line_count": 102,
+            "average_confidence": 0.9743
+          },
+          "compliance": {
+            "overall_status": "REVIEW",
+            "checks": {
+              "manufacturer_packer_importer": {
+                "label": "Name & address of manufacturer/packer/importer",
+                "detected": false,
+                "matched_text": null,
+                "status": "NOT_FOUND"
+              },
+              "net_quantity": {
+                "label": "Net quantity (weight/volume/number)",
+                "detected": false,
+                "matched_text": null,
+                "status": "NOT_FOUND"
+              },
+              "manufacture_date": {
+                "label": "Month & year of manufacture/packing",
+                "detected": false,
+                "matched_text": null,
+                "status": "NOT_FOUND"
+              },
+              "mrp": {
+                "label": "Retail Sale Price (MRP), inclusive of taxes",
+                "detected": true,
+                "matched_text": "MRP",
+                "status": "REVIEW",
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "consumer_care": {
+                "label": "Consumer care details (contact for complaints)",
+                "detected": true,
+                "matched_text": "EMAIL US",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "OR EMAIL US AT",
+                  "confidence": 0.9997496604919434,
+                  "bbox": {
+                    "x1": 800,
+                    "y1": 918,
+                    "x2": 980,
+                    "y2": 950
+                  }
+                }
+              },
+              "country_of_origin": {
+                "label": "Country of origin (mandatory only for imported goods)",
+                "detected": false,
+                "matched_text": null,
+                "conditional": true,
+                "status": "REVIEW"
+              },
+              "generic_name": {
+                "label": "Generic/common name of the commodity",
+                "detected": null,
+                "matched_text": null,
+                "status": "REVIEW",
+                "note": "Requires product-name/semantic extraction and manual verification."
+              }
+            },
+            "mandatory_declarations_detected": 1,
+            "mandatory_declarations_total": 5,
+            "mandatory_declarations_review": 1,
+            "mandatory_declarations_missing": 3,
+            "disclaimer": "Automated OCR-based first-pass check. NOT DETECTED does not confirm absence on the physical package. Verify manually before making any compliance claim."
+          }
+        }
+      ]
+    }
+  }
+}

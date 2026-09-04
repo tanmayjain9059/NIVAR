@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import cv2
+from src.image_quality.quality import assess_image_quality
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -16,7 +17,8 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 from src.ocr.preprocessing import preprocess_image
 from src.ocr.engine import (
-    run_ocr, 
+    build_ocr_summary,
+    run_ocr,
     ocr_roi,
     extract_text_from_region,
 )
@@ -266,6 +268,58 @@ def process_image(file_path, config=CONFIG):
     print("File:", file_path)
 
     image = load_image(file_path)
+    ocr_summary = build_ocr_summary(
+        None,
+        config.get("ocr_engine", "tesseract"),
+    )
+        # --------------------------------------------------------
+    # IMAGE QUALITY
+    # --------------------------------------------------------
+
+    print("\nAssessing image quality...")
+
+    image_quality = assess_image_quality(image)
+
+    print(
+        "Image quality score:",
+        image_quality["score"],
+    )
+
+    print(
+        "Image quality accepted:",
+        image_quality["accepted"],
+    )
+
+    if not image_quality["accepted"]:
+        print("\nImage quality check failed:")
+
+        for reason in image_quality["rejection_reasons"]:
+            print("-", reason)
+
+        return {
+            "image": image,
+            "processed_color": None,
+            "processed_gray": None,
+            "regions": {},
+            "rois": {},
+            "structured_result": {
+                "source_image": file_path,
+                "ocr": ocr_summary,
+                "image_quality": image_quality,
+                "legal_metrology_compliance": {
+                    "overall_status": "REVIEW",
+                    "checks": {},
+                    "mandatory_declarations_detected": 0,
+                    "mandatory_declarations_total": 0,
+                    "mandatory_declarations_review": 0,
+                    "mandatory_declarations_missing": 0,
+                    "disclaimer": (
+                        "Image quality was insufficient "
+                        "for reliable automated inspection."
+                    ),
+                },
+            },
+        }
 
     height, width, channels = image.shape
 
@@ -293,6 +347,11 @@ def process_image(file_path, config=CONFIG):
         config,
         image_path=file_path,
         coordinate_scale=config["scale"],
+    )
+
+    ocr_summary = build_ocr_summary(
+        data,
+        engine_name=config.get("ocr_engine", "tesseract"),
     )
 
     print("\n========== RAW OCR TEXT ==========")
@@ -611,6 +670,7 @@ def process_image(file_path, config=CONFIG):
 
     structured_result = build_structured_result(
         file_path=file_path,
+        ocr_summary=ocr_summary,
         nutrition=nutrition,
         ingredients=ingredients,
         contains=contains,
@@ -619,21 +679,8 @@ def process_image(file_path, config=CONFIG):
         nutrients_total=len(NUTRIENTS),
     )
 
+    structured_result["image_quality"] = image_quality
 
-
-    # --------------------------------------------------------
-    # STRUCTURED RESULT
-    # --------------------------------------------------------
-
-    structured_result = build_structured_result(
-        file_path=file_path,
-        nutrition=nutrition,
-        ingredients=ingredients,
-        contains=contains,
-        may_contain=may_contain,
-        compliance_report=compliance_report,
-        nutrients_total=len(NUTRIENTS),
-    )
 
     save_json_result(
         structured_result,

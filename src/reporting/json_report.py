@@ -8,6 +8,7 @@ from pathlib import Path
 
 def build_structured_result(
     file_path,
+    ocr_summary,
     nutrition,
     ingredients,
     contains,
@@ -17,6 +18,8 @@ def build_structured_result(
 ):
     return {
         "source_image": str(file_path),
+
+        "ocr": ocr_summary,
 
         "legal_metrology_compliance": compliance_report,
 
