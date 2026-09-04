@@ -1,39 +1,65 @@
 """
-REST API for the packaged-food label analyzer.
+FastAPI application for the packaged-commodity compliance analyzer.
 
-Frontend clients such as Android and Web should communicate
-with this API instead of directly importing the analysis engine.
+The API layer is intentionally thin:
+    request
+        -> analysis service
+        -> product persistence
+        -> structured response
+
+The OCR/compliance logic remains inside the existing analysis pipeline.
 """
-from fastapi import FastAPI
+
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from fastapi.middleware.cors import CORSMiddleware
+
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app.services.analyzer_service import analyze_image
 from app.services.product_service import ProductService
+from src.reporting import generate_pdf_report
 
+# ============================================================
+# APPLICATION
+# ============================================================
 
 app = FastAPI(
-    title="Packaged Food Label Analyzer API",
-    description=(
-        "API for OCR-based packaged-food label analysis "
-        "and Legal Metrology compliance screening."
-    ),
+    title="Packaged Commodity Compliance Analyzer",
     version="1.0.0",
+    description=(
+        "AI-assisted OCR system for checking packaged "
+        "commodity declarations under Legal Metrology "
+        "(Packaged Commodities) Rules, 2011."
+    ),
 )
+
+
+# ============================================================
+# CORS
+# ============================================================
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================
+# SERVICES
+# ============================================================
+
+product_service = ProductService()
+
+
+# ============================================================
+# CONSTANTS
+# ============================================================
 
 ALLOWED_EXTENSIONS = {
     ".jpg",
@@ -43,42 +69,47 @@ ALLOWED_EXTENSIONS = {
 }
 
 
-product_service = ProductService()
-
-
-class ProductCreateRequest(BaseModel):
-    """Request body for creating a product."""
-
-    product_name: str | None = None
-    brand: str | None = None
-    barcode: str | None = None
-    manufacturer: str | None = None
-
+# ============================================================
+# HEALTH CHECK
+# ============================================================
 
 @app.get("/")
-def health_check():
-    """
-    Basic API health check.
-    """
-
+def root():
     return {
         "success": True,
-        "service": "Packaged Food Label Analyzer",
-        "status": "running",
         "api_version": "v1",
+        "service": "Packaged Commodity Compliance Analyzer",
+        "status": "running",
     }
 
 
+@app.get("/health")
+def health_check():
+    return {
+        "success": True,
+        "api_version": "v1",
+        "status": "healthy",
+    }
+
+
+# ============================================================
+# IMAGE ANALYSIS
+# ============================================================
+
 @app.post("/api/v1/analyze")
-async def analyze_label(
+async def analyze(
     image: UploadFile = File(...),
 ):
     """
-    Analyze an uploaded packaged-food label image.
+    Analyze an uploaded packaged-commodity image.
 
-    The frontend sends an image using multipart/form-data.
-    The endpoint returns the structured analysis generated
-    by the existing analysis engine.
+    Flow:
+        Upload
+        -> temporary file
+        -> OCR/compliance analysis
+        -> product creation
+        -> complete analysis persistence
+        -> API response
     """
 
     filename = image.filename or ""
@@ -111,17 +142,92 @@ async def analyze_label(
             temp_path = Path(temp_file.name)
 
         try:
+            # ------------------------------------------------
+            # ANALYSIS
+            # ------------------------------------------------
+
             result = analyze_image(temp_path)
+
+            if not isinstance(result, dict):
+                raise RuntimeError(
+                    "Image analysis returned an invalid result."
+                )
+
+            # ------------------------------------------------
+            # JSON-SAFE ANALYSIS SNAPSHOT
+            # ------------------------------------------------
+            #
+            # This is the exact result returned to the frontend
+            # and persisted for History.
+            #
+            # Keeping one canonical snapshot prevents the API,
+            # repository and History from receiving different
+            # representations of the same analysis.
+
+            import json
+
+            analysis_snapshot = json.loads(
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    default=str,
+                )
+            )
+
+            # ------------------------------------------------
+            # PRODUCT CREATION
+            # ------------------------------------------------
+
+            product = product_service.create_product(
+                product_name=analysis_snapshot.get(
+                    "product_name"
+                ),
+                brand=analysis_snapshot.get(
+                    "brand"
+                ),
+                barcode=analysis_snapshot.get(
+                    "barcode"
+                ),
+                manufacturer=analysis_snapshot.get(
+                    "manufacturer"
+                ),
+            )
+
+            # ------------------------------------------------
+            # SCAN PERSISTENCE
+            # ------------------------------------------------
+            #
+            # Persist the SAME complete analysis object that
+            # is returned to the frontend.
+            #
+            # History can therefore display the previous
+            # result without running OCR again.
+
+            product_service.add_analysis_scan(
+                product_id=product.product_id,
+                image_path=temp_path,
+                analysis_result=analysis_snapshot,
+                image_quality=analysis_snapshot.get(
+                    "image_quality"
+                ),
+                ocr=analysis_snapshot.get(
+                    "ocr"
+                ),
+            )
 
         finally:
             temp_path.unlink(
                 missing_ok=True
             )
 
+        # ----------------------------------------------------
+        # RESPONSE
+        # ----------------------------------------------------
+
         return {
             "success": True,
             "api_version": "v1",
-            "data": result,
+            "data": analysis_snapshot,
             "warnings": [],
             "errors": [],
         }
@@ -129,54 +235,36 @@ async def analyze_label(
     except HTTPException:
         raise
 
-    except Exception as exc:
+    except FileNotFoundError as exc:
         raise HTTPException(
-            status_code=500,
-            detail={
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
-        )
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
-
-@app.post("/api/v1/products")
-def create_product(
-    request: ProductCreateRequest,
-):
-    """
-    Create a new product in the repository.
-    """
-
-    try:
-        product = product_service.create_product(
-            product_name=request.product_name,
-            brand=request.brand,
-            barcode=request.barcode,
-            manufacturer=request.manufacturer,
-        )
-
-        return {
-            "success": True,
-            "api_version": "v1",
-            "data": product.to_dict(),
-            "warnings": [],
-            "errors": [],
-        }
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail={
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
-        )
+            detail=(
+                "Image analysis failed: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        ) from exc
 
+
+# ============================================================
+# PRODUCT HISTORY
+# ============================================================
 
 @app.get("/api/v1/products")
 def list_products():
     """
-    Return all products stored in the repository.
+    Return all stored products and their scan history.
     """
 
     try:
@@ -196,11 +284,11 @@ def list_products():
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail={
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
-        )
+            detail=(
+                "Failed to load products: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        ) from exc
 
 
 @app.get("/api/v1/products/{product_id}")
@@ -208,47 +296,34 @@ def get_product(
     product_id: str,
 ):
     """
-    Return a product and its scan history.
+    Return one product and its complete scan history.
     """
 
-    try:
-        product = product_service.get_product(
-            product_id
-        )
+    product = product_service.get_product(
+        product_id
+    )
 
-        if product is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Product not found.",
-            )
-
-        return {
-            "success": True,
-            "api_version": "v1",
-            "data": product.to_dict(),
-            "warnings": [],
-            "errors": [],
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as exc:
+    if product is None:
         raise HTTPException(
-            status_code=500,
-            detail={
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
+            status_code=404,
+            detail="Product not found.",
         )
+
+    return {
+        "success": True,
+        "api_version": "v1",
+        "data": product.to_dict(),
+        "warnings": [],
+        "errors": [],
+    }
 
 
 @app.get("/api/v1/products/{product_id}/scans")
-def get_product_scans(
+def get_scan_history(
     product_id: str,
 ):
     """
-    Return the complete scan history of a product.
+    Return all scans belonging to one product.
     """
 
     try:
@@ -267,75 +342,38 @@ def get_product_scans(
             "errors": [],
         }
 
-    except ValueError:
+    except ValueError as exc:
         raise HTTPException(
             status_code=404,
-            detail="Product not found.",
-        )
+            detail=str(exc),
+        ) from exc
 
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail={
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
-        )
-@app.get("/api/v1/products/{product_id}/scans/{scan_id}")
-def get_product_scan(
+            detail=(
+                "Failed to load scan history: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        ) from exc
+
+
+# ============================================================
+# SINGLE SCAN DETAILS
+# ============================================================
+
+@app.get(
+    "/api/v1/products/{product_id}/scans/{scan_id}"
+)
+def get_scan(
     product_id: str,
     scan_id: str,
 ):
     """
-    Return one specific scan belonging to a product.
-    """
+    Return one complete historical scan.
 
-    try:
-        scan = product_service.get_scan(
-            product_id=product_id,
-            scan_id=scan_id,
-        )
-
-        if scan is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Scan not found.",
-            )
-
-        return {
-            "success": True,
-            "api_version": "v1",
-            "data": scan.to_dict(),
-            "warnings": [],
-            "errors": [],
-        }
-
-    except HTTPException:
-        raise
-
-    except ValueError:
-        raise HTTPException(
-            status_code=404,
-            detail="Product not found.",
-        )
-
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
-        )
-
-@app.post("/api/v1/products/{product_id}/analyze")
-async def analyze_product(
-    product_id: str,
-    image: UploadFile = File(...),
-):
-    """
-    Analyze an image and store the resulting analysis
-    as a scan belonging to an existing product.
+    The stored analysis is returned directly.
+    No OCR or image analysis is performed again.
     """
 
     product = product_service.get_product(
@@ -348,72 +386,194 @@ async def analyze_product(
             detail="Product not found.",
         )
 
-    filename = image.filename or ""
+    scan = product_service.get_scan(
+        product_id,
+        scan_id,
+    )
 
-    extension = Path(filename).suffix.lower()
-
-    if extension not in ALLOWED_EXTENSIONS:
+    if scan is None:
         raise HTTPException(
-            status_code=400,
+            status_code=404,
+            detail="Scan not found.",
+        )
+
+    return {
+        "success": True,
+        "api_version": "v1",
+        "data": scan.to_dict(),
+        "warnings": [],
+        "errors": [],
+    }
+
+
+# ============================================================
+# STORED SCAN IMAGE
+# ============================================================
+
+@app.get(
+    "/api/v1/products/{product_id}/scans/{scan_id}/image"
+)
+def get_scan_image(
+    product_id: str,
+    scan_id: str,
+):
+    """
+    Return the permanently stored image associated
+    with a historical scan.
+    """
+
+    product = product_service.get_product(
+        product_id
+    )
+
+    if product is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found.",
+        )
+
+    scan = product_service.get_scan(
+        product_id,
+        scan_id,
+    )
+
+    if scan is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Scan not found.",
+        )
+
+    image_path = Path(scan.image_path)
+
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Stored scan image not found.",
+        )
+
+    return FileResponse(
+        path=image_path,
+        filename=image_path.name,
+    )
+
+# ============================================================
+# PDF REPORT
+# ============================================================
+
+@app.get(
+    "/api/v1/products/{product_id}/scans/{scan_id}/report"
+)
+def get_scan_report(
+    product_id: str,
+    scan_id: str,
+):
+    """
+    Generate a PDF report from an already-persisted scan.
+
+    IMPORTANT:
+        This endpoint does NOT run OCR, preprocessing,
+        extraction, or compliance validation.
+
+        It only reads the stored ScanRecord and converts
+        the existing analysis into a PDF.
+    """
+
+    product = product_service.get_product(
+        product_id
+    )
+
+    if product is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found.",
+        )
+
+    scan = product_service.get_scan(
+        product_id,
+        scan_id,
+    )
+
+    if scan is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Scan not found.",
+        )
+
+    if not isinstance(scan.analysis, dict):
+        raise HTTPException(
+            status_code=409,
             detail=(
-                "Unsupported image format. "
-                "Use JPG, JPEG, PNG or WEBP."
+                "This scan does not contain a stored "
+                "analysis result and cannot generate a PDF report."
             ),
         )
 
+    image_path = Path(scan.image_path)
+
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Stored scan image not found.",
+        )
+
+    report_dir = Path("results") / "reports"
+    report_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    safe_product_id = (
+        "".join(
+            character
+            if character.isalnum() or character in "-_"
+            else "_"
+            for character in product_id
+        )
+        or "product"
+    )
+
+    safe_scan_id = (
+        "".join(
+            character
+            if character.isalnum() or character in "-_"
+            else "_"
+            for character in scan_id
+        )
+        or "scan"
+    )
+
+    report_path = (
+        report_dir
+        / f"{safe_product_id}_{safe_scan_id}_report.pdf"
+    )
+
     try:
-        image_bytes = await image.read()
+        generate_pdf_report(
+            analysis=scan.analysis,
+            image_path=image_path,
+            output_path=report_path,
+        )
 
-        if not image_bytes:
-            raise HTTPException(
-                status_code=400,
-                detail="Uploaded image is empty.",
-            )
-
-        with NamedTemporaryFile(
-            suffix=extension,
-            delete=False,
-        ) as temp_file:
-            temp_file.write(image_bytes)
-            temp_path = Path(temp_file.name)
-
-        try:
-            result = analyze_image(temp_path)
-
-            scan = product_service.add_analysis_scan(
-                product_id=product_id,
-                image_path=temp_path,
-                analysis_result=result,
-                image_quality=result.get(
-                    "image_quality"
-                ),
-                ocr=result.get("ocr"),
-            )
-
-        finally:
-            temp_path.unlink(
-                missing_ok=True
-            )
-
-        return {
-            "success": True,
-            "api_version": "v1",
-            "data": {
-                "product_id": product_id,
-                "scan": scan.to_dict(),
-            },
-            "warnings": [],
-            "errors": [],
-        }
-
-    except HTTPException:
-        raise
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
 
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail={
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
-        )
+            detail=(
+                "PDF report generation failed: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        ) from exc
+
+    return FileResponse(
+        path=report_path,
+        media_type="application/pdf",
+        filename=(
+            f"compliance_report_"
+            f"{safe_scan_id}.pdf"
+        ),
+    )

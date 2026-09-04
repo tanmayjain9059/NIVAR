@@ -7,28 +7,60 @@ import Home from "./pages/Home";
 import Upload from "./pages/Upload";
 import Processing from "./pages/Processing";
 import Results from "./pages/Results";
+import History from "./pages/History";
 
-export type AppState = "HOME" | "UPLOAD" | "PROCESSING" | "RESULTS";
+export type AppState =
+  | "HOME"
+  | "UPLOAD"
+  | "PROCESSING"
+  | "RESULTS"
+  | "HISTORY";
 
 function App() {
   const [appState, setAppState] = useState<AppState>("HOME");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [analysisResult, setAnalysisResult] = useState<AnalyzeResponse | null>(null);
+  const [analysisResult, setAnalysisResult] =
+    useState<AnalyzeResponse | null>(null);
 
   const navigateTo = (state: AppState) => {
     setAppState(state);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const handleNavigation = (view: string) => {
+    if (view === "Overview") {
+      navigateTo("HOME");
+      return;
+    }
+
+    if (view === "Scan Product") {
+      navigateTo("UPLOAD");
+      return;
+    }
+
+    if (view === "History") {
+      navigateTo("HISTORY");
+    }
+  };
+
   const pageVariants = {
     initial: { opacity: 0, y: 10 },
     in: { opacity: 1, y: 0 },
-    out: { opacity: 0, y: -10 }
+    out: { opacity: 0, y: -10 },
   };
 
   return (
     <div className="min-h-screen bg-civic-bg flex flex-col font-sans">
-      <Navigation />
+      <Navigation
+        currentView={
+          appState === "HOME"
+            ? "Overview"
+            : appState === "HISTORY"
+            ? "History"
+            : "Scan Product"
+        }
+        onNavigate={handleNavigation}
+      />
 
       <main className="flex-1 flex flex-col relative">
         <AnimatePresence mode="wait">
@@ -103,6 +135,20 @@ function App() {
                   navigateTo("UPLOAD");
                 }}
               />
+            </motion.div>
+          )}
+
+          {appState === "HISTORY" && (
+            <motion.div
+              key="HISTORY"
+              initial="initial"
+              animate="in"
+              exit="out"
+              variants={pageVariants}
+              transition={{ ease: "easeOut", duration: 0.35 }}
+              className="flex-1 flex flex-col"
+            >
+              <History />
             </motion.div>
           )}
         </AnimatePresence>

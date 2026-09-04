@@ -1,25 +1,33 @@
 """
-Extraction of Legal Metrology declarations from OCR text.
+Legal Metrology declaration extraction from OCR text.
 
-The extractor detects declaration patterns and, when OCR dataframe
-information is available, attaches the corresponding OCR evidence.
+This module performs first-pass extraction of mandatory packaged-
+commodity declarations and attaches OCR evidence when available.
+
+Extraction philosophy:
+    label detection
+        -> candidate value generation
+        -> spatial / textual association
+        -> positive + negative evidence
+        -> conservative result
+
+This is an extraction layer, not a legal compliance certification.
 """
 
 import re
 
 
+# ============================================================================
+# GENERIC HELPERS
+# ============================================================================
+
 def _search(pattern, text, flags=re.IGNORECASE):
-    """
-    Return the first regex match or None.
-    """
-    return re.search(pattern, text, flags)
+    """Return the first regex match or None."""
+    return re.search(pattern, text or "", flags)
 
 
 def _normalize_text(text):
-    """
-    Normalize text for loose matching between regex output
-    and individual OCR rows.
-    """
+    """Normalize OCR text for loose comparison."""
     return re.sub(
         r"\s+",
         " ",
@@ -27,11 +35,47 @@ def _normalize_text(text):
     ).lower()
 
 
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _bbox_from_row(row):
+    """Build a normalized evidence bounding box."""
+    try:
+        return {
+            "x1": int(float(row["left"])),
+            "y1": int(float(row["top"])),
+            "x2": int(float(row["right"])),
+            "y2": int(float(row["bottom"])),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _evidence_from_row(row, text_override=None):
+    """Create OCR evidence from a dataframe row."""
+    bbox = _bbox_from_row(row)
+
+    if bbox is None:
+        return None
+
+    return {
+        "text": (
+            str(text_override).strip()
+            if text_override is not None
+            else str(row.get("text", "")).strip()
+        ),
+        "confidence": _safe_float(row.get("conf", 0)),
+        "bbox": bbox,
+    }
+
+
 def _find_evidence(matched_text, ocr_data):
     """
-    Find the OCR row that best corresponds to a regex match.
-
-    Returns OCR text, confidence and bounding box when available.
+    Find the OCR row that best corresponds to matched text.
     """
     if not matched_text or ocr_data is None:
         return None
@@ -45,258 +89,45 @@ def _find_evidence(matched_text, ocr_data):
         return None
 
     best_match = None
-    best_score = 0
+    best_score = 0.0
 
     for _, row in ocr_data.iterrows():
-        text = str(
-            row.get("text", "")
-        ).strip()
+        row_text = str(row.get("text", "")).strip()
 
-        if not text:
+        if not row_text:
             continue
 
-        normalized = _normalize_text(text)
+        normalized = _normalize_text(row_text)
 
         if not normalized:
             continue
 
-        # Exact OCR-row match.
         if normalized == target:
             score = 1.0
-
-        # Regex may match only part of an OCR row.
         elif target in normalized:
-            score = 0.9
-
-        # OCR may contain a slightly different spacing.
+            score = 0.92
         elif normalized in target:
-            score = 0.8
-
+            score = 0.82
         else:
             continue
 
         if score <= best_score:
             continue
 
-        try:
-            left = int(row["left"])
-            top = int(row["top"])
-            right = int(row["right"])
-            bottom = int(row["bottom"])
-            confidence = float(row["conf"])
+        evidence = _evidence_from_row(row)
 
-        except (
-            KeyError,
-            TypeError,
-            ValueError,
-        ):
+        if evidence is None:
             continue
 
-        best_match = {
-            "text": text,
-            "confidence": confidence,
-            "bbox": {
-                "x1": left,
-                "y1": top,
-                "x2": right,
-                "y2": bottom,
-            },
-        }
-
+        best_match = evidence
         best_score = score
 
     return best_match
 
 
-def _find_nearby_value(
-    label_pattern,
-    ocr_data,
-    value_pattern,
-    max_vertical_gap=250,
-    max_horizontal_gap=900,
-):
-    """
-    Find a value OCR row spatially associated with a
-    declaration label.
-
-    Supports two common layouts:
-
-    1. Horizontal:
-           LABEL:  VALUE
-
-    2. Vertical:
-           LABEL:
-           VALUE
-
-    The candidate must:
-      - match the supplied value pattern;
-      - be spatially close to the label;
-      - preferably appear to the right or below the label.
-
-    Candidates are ranked using spatial distance and OCR confidence.
-    """
-
-    if not label_pattern or ocr_data is None:
-        return None
-
-    if getattr(ocr_data, "empty", True):
-        return None
-
-    label_text = label_pattern.group(0)
-
-    label_evidence = _find_evidence(
-        label_text,
-        ocr_data,
-    )
-
-    if not label_evidence:
-        return None
-
-    label_bbox = label_evidence["bbox"]
-
-    label_left = label_bbox["x1"]
-    label_right = label_bbox["x2"]
-    label_top = label_bbox["y1"]
-    label_bottom = label_bbox["y2"]
-
-    label_center_x = (
-        label_left + label_right
-    ) / 2
-
-    label_center_y = (
-        label_top + label_bottom
-    ) / 2
-
-    candidates = []
-
-    for _, row in ocr_data.iterrows():
-
-        candidate_text = str(
-            row.get("text", "")
-        ).strip()
-
-        if not candidate_text:
-            continue
-
-        match = re.fullmatch(
-            rf"\s*({value_pattern})\s*",
-            candidate_text,
-            re.IGNORECASE,
-        )
-
-        if not match:
-            continue
-
-        try:
-            left = int(row["left"])
-            top = int(row["top"])
-            right = int(row["right"])
-            bottom = int(row["bottom"])
-            confidence = float(row["conf"])
-
-        except (
-            KeyError,
-            TypeError,
-            ValueError,
-        ):
-            continue
-
-        center_x = (
-            left + right
-        ) / 2
-
-        center_y = (
-            top + bottom
-        ) / 2
-
-        horizontal_gap = max(
-            0,
-            left - label_right,
-        )
-
-        vertical_gap = max(
-            0,
-            top - label_bottom,
-        )
-
-        # Candidate to the right of the label.
-        is_right_candidate = (
-            left >= label_right
-            and abs(center_y - label_center_y)
-            <= max_vertical_gap
-            and horizontal_gap
-            <= max_horizontal_gap
-        )
-
-        # Candidate below the label.
-        is_below_candidate = (
-            top >= label_bottom
-            and abs(center_x - label_center_x)
-            <= max_horizontal_gap
-            and vertical_gap
-            <= max_vertical_gap
-        )
-
-        if not (
-            is_right_candidate
-            or is_below_candidate
-        ):
-            continue
-
-        if is_right_candidate:
-            distance = (
-                abs(center_y - label_center_y)
-                + horizontal_gap * 0.25
-            )
-            layout_priority = 0
-
-        else:
-            distance = (
-                abs(center_x - label_center_x)
-                + vertical_gap * 0.25
-            )
-            layout_priority = 1
-
-        candidates.append(
-            (
-                layout_priority,
-                distance,
-                -confidence,
-                {
-                    "text": match.group(1),
-                    "confidence": confidence,
-                    "bbox": {
-                        "x1": left,
-                        "y1": top,
-                        "x2": right,
-                        "y2": bottom,
-                    },
-                },
-            )
-        )
-
-    if not candidates:
-        return None
-
-    candidates.sort(
-        key=lambda item: (
-            item[0],
-            item[1],
-            item[2],
-        )
-    )
-
-    return candidates[0][3]
-
 def _result(pattern, ocr_data=None):
-    """
-    Convert a regex match into the standard extractor result.
-    """
-    matched_text = (
-        pattern.group(0)
-        if pattern
-        else None
-    )
+    """Convert regex match to standard extractor result."""
+    matched_text = pattern.group(0) if pattern else None
 
     result = {
         "detected": bool(pattern),
@@ -314,9 +145,190 @@ def _result(pattern, ocr_data=None):
     return result
 
 
+# ============================================================================
+# SHARED OCR / SPATIAL HELPERS
+# ============================================================================
+
+def _find_label_rows(label_regex, ocr_data):
+    """Find OCR rows containing a declaration label."""
+    if ocr_data is None or getattr(ocr_data, "empty", True):
+        return []
+
+    rows = []
+
+    for _, row in ocr_data.iterrows():
+        text = str(row.get("text", "")).strip()
+
+        if not text:
+            continue
+
+        if re.search(
+            label_regex,
+            text,
+            re.IGNORECASE,
+        ):
+            rows.append(row)
+
+    return rows
+
+
+def _spatial_candidates(
+    label_row,
+    ocr_data,
+    value_matcher,
+    *,
+    max_right_gap=450,
+    max_right_y_diff=180,
+    max_below_gap=500,
+    max_below_x_diff=500,
+):
+    """
+    Find value OCR rows spatially associated with a label.
+
+    Supported layouts:
+
+        LABEL VALUE
+
+    and:
+
+        LABEL
+        VALUE
+    """
+    if ocr_data is None or getattr(ocr_data, "empty", True):
+        return []
+
+    try:
+        label_left = float(label_row["left"])
+        label_top = float(label_row["top"])
+        label_right = float(label_row["right"])
+        label_bottom = float(label_row["bottom"])
+    except (KeyError, TypeError, ValueError):
+        return []
+
+    label_cx = (label_left + label_right) / 2
+    label_cy = (label_top + label_bottom) / 2
+
+    candidates = []
+
+    for _, row in ocr_data.iterrows():
+        if row.name == label_row.name:
+            continue
+
+        candidate_text = str(row.get("text", "")).strip()
+
+        if not candidate_text:
+            continue
+
+        match = value_matcher(candidate_text)
+
+        if not match:
+            continue
+
+        try:
+            left = float(row["left"])
+            top = float(row["top"])
+            right = float(row["right"])
+            bottom = float(row["bottom"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        center_x = (left + right) / 2
+        center_y = (top + bottom) / 2
+
+        right_gap = left - label_right
+        right_y_diff = abs(center_y - label_cy)
+
+        below_gap = top - label_bottom
+        below_x_diff = abs(center_x - label_cx)
+
+        is_right = (
+            right_gap >= 0
+            and right_gap <= max_right_gap
+            and right_y_diff <= max_right_y_diff
+        )
+
+        is_below = (
+            below_gap >= 0
+            and below_gap <= max_below_gap
+            and below_x_diff <= max_below_x_diff
+        )
+
+        if not (is_right or is_below):
+            continue
+
+        confidence = _safe_float(
+            row.get("conf", 0)
+        )
+
+        if is_right:
+            geometry_score = (
+                100
+                - right_gap * 0.12
+                - right_y_diff * 0.20
+            )
+            layout = "right"
+        else:
+            geometry_score = (
+                90
+                - below_gap * 0.10
+                - below_x_diff * 0.08
+            )
+            layout = "below"
+
+        candidates.append(
+            {
+                "row": row,
+                "text": candidate_text,
+                "match": match,
+                "confidence": confidence,
+                "geometry_score": geometry_score,
+                "layout": layout,
+            }
+        )
+
+    return candidates
+
+
+def _best_spatial_candidate(candidates):
+    """Return the strongest spatial candidate."""
+    if not candidates:
+        return None
+
+    candidates.sort(
+        key=lambda candidate: (
+            candidate["geometry_score"]
+            + candidate["confidence"] * 25
+        ),
+        reverse=True,
+    )
+
+    return candidates[0]
+
+
+# ============================================================================
+# MANUFACTURER / PACKER / IMPORTER
+# ============================================================================
+
+MANUFACTURER_LABEL_REGEX = (
+    r"(?:"
+    r"manufactured\s+by"
+    r"|packed\s+by"
+    r"|marketed\s+by"
+    r"|imported\s+by"
+    r"|mfg\.?\s*(?:&|and)\s*mkt\.?\s*by"
+    r")"
+)
+
+
 def extract_manufacturer(text, ocr_data=None):
+    """
+    Detect manufacturer / packer / marketer / importer wording.
+
+    'Manufactured by' is explicitly a manufacturer declaration,
+    not a manufacture-date declaration.
+    """
     pattern = _search(
-        r"(manufactured|packed|marketed|imported)\s+by",
+        MANUFACTURER_LABEL_REGEX,
         text,
     )
 
@@ -326,52 +338,63 @@ def extract_manufacturer(text, ocr_data=None):
     )
 
 
+# ============================================================================
+# NET QUANTITY
+# ============================================================================
+
+NET_QUANTITY_LABEL_REGEX = (
+    r"(?:"
+    r"net\s+(?:weight|quantity|qty)"
+    r"|n\.?\s*qty"
+    r")"
+)
+
+NET_QUANTITY_VALUE_REGEX = re.compile(
+    r"^\s*"
+    r"(\d+(?:\.\d+)?)"
+    r"\s*"
+    r"(g|gm|gms|kg|mg|ml|l|ltr|litre|liter|pcs|pieces|pc|n)"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
+def _match_net_quantity_value(value):
+    return NET_QUANTITY_VALUE_REGEX.fullmatch(value)
+
+
+def _clean_net_quantity(match):
+    return f"{match.group(1)} {match.group(2)}"
+
+
 def extract_net_quantity(text, ocr_data=None):
     """
-    Detect the declared net quantity.
-
-    A quantity is considered reliable only when it is associated
-    with explicit net-quantity wording.
-
-    Supports both:
-
-        Net Weight: 400 g
-
-    and OCR layouts where the label and value are detected
-    as separate spatially related OCR rows.
-
-    Serving size values are deliberately not accepted
-    as net quantity.
+    Detect net quantity only when explicitly associated with
+    net-quantity wording.
     """
-
     text = text or ""
 
-    # --------------------------------------------------------
-    # 1. Explicit same-line net quantity
-    # --------------------------------------------------------
-
+    # ------------------------------------------------------------------
+    # Same-line
+    # ------------------------------------------------------------------
     contextual_pattern = _search(
-        r"(?:net\s*(?:weight|quantity|qty))"
-        r"\s*[:\-]?\s*"
-        r"(\d+(?:\.\d+)?)\s*"
-        r"(g|gm|gms|kg|ml|l|litre|liter|ltr|pcs|pieces|n\b)",
+        NET_QUANTITY_LABEL_REGEX
+        + r"\s*[:=\-]?\s*"
+        + r"(\d+(?:\.\d+)?)"
+        + r"\s*"
+        + r"(g|gm|gms|kg|mg|ml|l|ltr|litre|liter|pcs|pieces|pc|n)"
+        + r"\b",
         text,
     )
 
     if contextual_pattern:
-        matched_text = (
-            contextual_pattern.group(1)
-            + " "
-            + contextual_pattern.group(2)
-        )
-
         result = {
             "detected": True,
-            "matched_text": matched_text,
+            "matched_text": contextual_pattern.group(0),
         }
 
         evidence = _find_evidence(
-            matched_text,
+            contextual_pattern.group(0),
             ocr_data,
         )
 
@@ -380,43 +403,66 @@ def extract_net_quantity(text, ocr_data=None):
 
         return result
 
-    # --------------------------------------------------------
-    # 2. Find net-quantity label
-    # --------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Spatial
+    # ------------------------------------------------------------------
+    label_rows = _find_label_rows(
+        NET_QUANTITY_LABEL_REGEX,
+        ocr_data,
+    )
 
+    candidates = []
+
+    for label_row in label_rows:
+        spatial = _spatial_candidates(
+            label_row,
+            ocr_data,
+            _match_net_quantity_value,
+            max_right_gap=500,
+            max_right_y_diff=180,
+            max_below_gap=450,
+            max_below_x_diff=350,
+        )
+
+        for candidate in spatial:
+            candidate["label_row"] = label_row
+
+            candidates.append(candidate)
+
+    best = _best_spatial_candidate(candidates)
+
+    if best:
+        value = _clean_net_quantity(
+            best["match"]
+        )
+
+        evidence = _evidence_from_row(
+            best["row"],
+            text_override=value,
+        )
+
+        result = {
+            "detected": True,
+            "matched_text": (
+                f"{str(best['label_row'].get('text', '')).strip()} "
+                f"{value}"
+            ),
+        }
+
+        if evidence:
+            result["evidence"] = evidence
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Label exists but value missing
+    # ------------------------------------------------------------------
     label_pattern = _search(
-        r"(net\s*(?:weight|quantity|qty))",
+        NET_QUANTITY_LABEL_REGEX,
         text,
     )
 
     if label_pattern:
-
-        # ----------------------------------------------------
-        # Try spatially associated value from OCR
-        # ----------------------------------------------------
-
-        nearby_value = _find_nearby_value(
-            label_pattern,
-            ocr_data,
-            r"\b\d+(?:\.\d+)?\s*"
-            r"(?:g|gm|gms|kg|ml|l|litre|liter|ltr|pcs|pieces|n)\b",
-        )
-
-        if nearby_value:
-            return {
-                "detected": True,
-                "matched_text": (
-                    label_pattern.group(0)
-                    + " "
-                    + nearby_value["text"]
-                ),
-                "evidence": nearby_value,
-            }
-
-        # ----------------------------------------------------
-        # Label exists but value was not detected
-        # ----------------------------------------------------
-
         result = {
             "detected": True,
             "matched_text": label_pattern.group(0),
@@ -433,82 +479,256 @@ def extract_net_quantity(text, ocr_data=None):
 
         return result
 
-    # --------------------------------------------------------
-    # 3. Do NOT fall back to arbitrary quantities
-    # --------------------------------------------------------
-
     return {
         "detected": False,
         "matched_text": None,
     }
 
+
+# ============================================================================
+# MANUFACTURE / PACKING DATE
+# ============================================================================
+MANUFACTURE_DATE_LABEL_REGEX = (
+    r"(?:"
+    r"\bmfd\b"
+    r"|"
+    r"\bmfg(?:\.?\s*date)?\b"
+    r"|"
+    r"\bmanufacture(?:d)?\s+date\b"
+    r"|"
+    r"\bmanufactured(?!\s+by\b)"
+    r"|"
+    r"\bpkd\b"
+    r"|"
+    r"\bpacked\b"
+    r"|"
+    r"\bdate\s+of\s+packaging\b"
+    r")"
+)
+
+MONTH_NAME_REGEX = (
+    r"(?:"
+    r"jan(?:uary)?"
+    r"|feb(?:ruary)?"
+    r"|mar(?:ch)?"
+    r"|apr(?:il)?"
+    r"|may"
+    r"|jun(?:e)?"
+    r"|jul(?:y)?"
+    r"|aug(?:ust)?"
+    r"|sep(?:t(?:ember)?)?"
+    r"|oct(?:ober)?"
+    r"|nov(?:ember)?"
+    r"|dec(?:ember)?"
+    r")"
+)
+DATE_VALUE_CORE_REGEX = (
+    r"(?:"
+    r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
+    r"|"
+    + r"\d{1,2}[/-]" + MONTH_NAME_REGEX + r"[/-]\d{2,4}"
+    + r"|"
+    + MONTH_NAME_REGEX + r"[/-]\d{2,4}"
+    + r"|"
+    + r"\d{1,2}" + MONTH_NAME_REGEX + r"\d{2,4}"
+    + r")"
+)
+
+DATE_VALUE_REGEX = re.compile(
+    r"^\s*" + DATE_VALUE_CORE_REGEX + r"\s*$",
+    re.IGNORECASE,
+)
+
+DATE_VALUE_CORE_REGEX = (
+    r"(?:"
+    r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
+    r"|"
+    r"\d{1,2}[/-]" + MONTH_NAME_REGEX + r"[/-]\d{2,4}"
+    r"|"
+    + MONTH_NAME_REGEX
+    + r"[/-]\d{2,4}"
+    + r"|"
+    + r"\d{1,2}"
+    + MONTH_NAME_REGEX
+    + r"\d{2,4}"
+    + r")"
+)
+
+DATE_VALUE_REGEX = re.compile(
+    r"^\s*" + DATE_VALUE_CORE_REGEX + r"\s*$",
+    re.IGNORECASE,
+)
+DATE_NEGATIVE_REGEX = re.compile(
+    r"(?:"
+    r"\bbest\s+before\b"
+    r"|"
+    r"\bbest\s+before\s+end\b"
+    r"|"
+    r"\buse\s+by\b"
+    r"|"
+    r"\bexpiry\b"
+    r"|"
+    r"\bexpires\b"
+    r"|"
+    r"\bexp\b"
+    r"|"
+    r"\bexp\.?\s*date\b"
+    r"|"
+    r"\bexpiry\s+date\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _match_date_value(value):
+    return DATE_VALUE_REGEX.fullmatch(value)
+
+
+def _date_label_is_negative(label_text):
+    return bool(
+        DATE_NEGATIVE_REGEX.search(
+            str(label_text or "")
+        )
+    )
+
+
 def extract_manufacture_date(text, ocr_data=None):
     """
-    Detect month/year of manufacture or packing.
+    Detect manufacture / packing dates.
 
-    Supports labels such as:
-        MFD
-        MFG
-        MFG DATE
-        MANUFACTURED
-        PKD
-        PACKED
-        DATE OF PACKAGING
+    Important semantic distinction:
 
-    The associated value must be a date-like OCR token.
-    Spatial matching supports both nearby horizontal
-    and vertically separated layouts.
+        Manufactured by -> manufacturer
+        Manufactured 14/11/2024 -> manufacture date
+
+    Expiry / best-before / use-by dates are excluded.
     """
-
     text = text or ""
 
-    date_regex = (
-        r"(?:"
-        r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
-        r"|"
-        r"\d{1,2}[/-][A-Za-z]{3,9}[/-]\d{2,4}"
-        r"|"
-        r"[A-Za-z]{3,9}[/-]\d{2,4}"
-        r"|"
-        r"\d{1,2}[A-Za-z]{3,9}\d{2,4}"
-        r")"
-    )
-
-    label_pattern = _search(
-        r"(?:"
-        r"mfd|mfg(?:\.?\s*date)?|"
-        r"manufactured|manufacture(?:d)?\s*date|"
-        r"pkd|packed|date\s*of\s*packaging"
-        r")",
-        text,
-    )
-
-    if not label_pattern:
-        return {
-            "detected": False,
-            "matched_text": None,
-        }
-
-    # First try same-text / same-row detection.
+    # ------------------------------------------------------------------
+    # Same-line / attached date
+    # ------------------------------------------------------------------
     contextual_pattern = _search(
-        label_pattern.group(0)
-        + r"\s*[:\-]?\s*"
-        + "("
-        + date_regex
-        + ")",
+        MANUFACTURE_DATE_LABEL_REGEX
+        + r"\s*[\.:=\-]?\s*"
+        + r"("
+        + DATE_VALUE_CORE_REGEX
+        + r")",
         text,
     )
 
     if contextual_pattern:
         matched_text = contextual_pattern.group(0)
 
+        if not DATE_NEGATIVE_REGEX.search(
+            matched_text
+        ):
+            result = {
+                "detected": True,
+                "matched_text": matched_text,
+            }
+
+            evidence = _find_evidence(
+                matched_text,
+                ocr_data,
+            )
+
+            if evidence:
+                result["evidence"] = evidence
+
+            return result
+
+    # ------------------------------------------------------------------
+    # Spatial
+    # ------------------------------------------------------------------
+    label_rows = _find_label_rows(
+        MANUFACTURE_DATE_LABEL_REGEX,
+        ocr_data,
+    )
+
+    candidates = []
+
+    for label_row in label_rows:
+        label_text = str(
+            label_row.get("text", "")
+        ).strip()
+
+        if _date_label_is_negative(
+            label_text
+        ):
+            continue
+
+        spatial = _spatial_candidates(
+            label_row,
+            ocr_data,
+            _match_date_value,
+            max_right_gap=450,
+            max_right_y_diff=180,
+            max_below_gap=500,
+            max_below_x_diff=450,
+        )
+
+        for candidate in spatial:
+            candidate_text = candidate["text"]
+
+            if DATE_NEGATIVE_REGEX.search(
+                candidate_text
+            ):
+                continue
+
+            label_lower = label_text.lower()
+
+            if re.search(
+                r"\b(?:mfd|mfg|pkd)\b",
+                label_lower,
+            ):
+                candidate["geometry_score"] += 20
+
+            if "date" in label_lower:
+                candidate["geometry_score"] += 10
+
+            candidate["label_row"] = label_row
+            candidates.append(candidate)
+
+    best = _best_spatial_candidate(
+        candidates
+    )
+
+    if best:
+        evidence = _evidence_from_row(
+            best["row"]
+        )
+
         result = {
             "detected": True,
-            "matched_text": matched_text,
+            "matched_text": (
+                f"{str(best['label_row'].get('text', '')).strip()}\n"
+                f"{best['text']}"
+            ),
+        }
+
+        if evidence:
+            result["evidence"] = evidence
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Label exists but value missing
+    # ------------------------------------------------------------------
+    label_pattern = _search(
+        MANUFACTURE_DATE_LABEL_REGEX,
+        text,
+    )
+
+    if label_pattern:
+        result = {
+            "detected": True,
+            "matched_text": label_pattern.group(0),
+            "value_missing": True,
         }
 
         evidence = _find_evidence(
-            contextual_pattern.group(1),
+            label_pattern.group(0),
             ocr_data,
         )
 
@@ -517,613 +737,346 @@ def extract_manufacture_date(text, ocr_data=None):
 
         return result
 
-    if ocr_data is not None and not getattr(
-        ocr_data,
-        "empty",
-        True,
-    ):
-        label_evidence = _find_evidence(
-            label_pattern.group(0),
-            ocr_data,
-        )
-
-        if label_evidence:
-            bbox = label_evidence["bbox"]
-
-            label_left = bbox["x1"]
-            label_right = bbox["x2"]
-            label_top = bbox["y1"]
-            label_bottom = bbox["y2"]
-
-            label_center_x = (
-                label_left + label_right
-            ) / 2
-
-            label_center_y = (
-                label_top + label_bottom
-            ) / 2
-
-            candidates = []
-
-            for _, row in ocr_data.iterrows():
-
-                candidate_text = str(
-                    row.get("text", "")
-                ).strip()
-
-                if not candidate_text:
-                    continue
-
-                match = re.fullmatch(
-                    date_regex,
-                    candidate_text,
-                    re.IGNORECASE,
-                )
-
-                if not match:
-                    continue
-
-                try:
-                    left = int(row["left"])
-                    top = int(row["top"])
-                    right = int(row["right"])
-                    bottom = int(row["bottom"])
-                    confidence = float(row["conf"])
-
-                except (
-                    KeyError,
-                    TypeError,
-                    ValueError,
-                ):
-                    continue
-
-                center_x = (
-                    left + right
-                ) / 2
-
-                center_y = (
-                    top + bottom
-                ) / 2
-
-                horizontal_gap = max(
-                    0,
-                    left - label_right,
-                )
-
-                vertical_gap = max(
-                    0,
-                    top - label_bottom,
-                )
-
-                # Horizontal layout.
-                right_candidate = (
-                    left >= label_right
-                    and abs(
-                    center_y - label_center_y
-                    ) <= 300
-                    and horizontal_gap <= 300
-                )
-
-                # Vertical layout.
-                below_candidate = (
-                    top >= label_bottom
-                    and abs(
-                    center_x - label_center_x
-                    ) <= 900
-                    and vertical_gap <= 700
-                )
-
-                if not (
-                    right_candidate
-                    or below_candidate
-                ):
-                    continue
-
-                if right_candidate:
-                    distance = (
-                        abs(
-                            center_y
-                            - label_center_y
-                    )
-    + horizontal_gap * 2.0
-)
-                    priority = 0
-
-                else:
-                    distance = (
-                        abs(
-                            center_x
-                            - label_center_x
-                        )
-                        + vertical_gap * 0.25
-                    )
-                    priority = 1
-
-                candidates.append(
-                    (
-                        priority,
-                        distance,
-                        -confidence,
-                        {
-                            "text": candidate_text,
-                            "confidence": confidence,
-                            "bbox": {
-                                "x1": left,
-                                "y1": top,
-                                "x2": right,
-                                "y2": bottom,
-                            },
-                        },
-                    )
-                )
-
-            if candidates:
-                candidates.sort(
-                    key=lambda item: (
-                        item[0],
-                        item[1],
-                        item[2],
-                    )
-                )
-
-                best = candidates[0][3]
-
-                return {
-                    "detected": True,
-                    "matched_text": (
-                        label_pattern.group(0)
-                        + "\n"
-                        + best["text"]
-                    ),
-                    "evidence": best,
-                }
-
-    result = {
-        "detected": True,
-        "matched_text": label_pattern.group(0),
-        "value_missing": True,
+    return {
+        "detected": False,
+        "matched_text": None,
     }
 
-    evidence = _find_evidence(
-        label_pattern.group(0),
-        ocr_data,
+
+# ============================================================================
+# MRP
+# ============================================================================
+
+MRP_LABEL_REGEX = (
+    r"(?:"
+    r"\bm\s*\.?\s*r\s*\.?\s*p\s*\.?"
+    r"|"
+    r"\bmaximum\s+retail\s+price\b"
+    r"|"
+    r"\bretail\s+sale\s+price\b"
+    r")"
+)
+
+
+MRP_NUMBER_REGEX = re.compile(
+    r"^\s*(?:"
+    r"₹\s*"
+    r"|rs\.?\s*"
+    r"|inr\s*"
+    r")?"
+    r"(\d{1,5}(?:\.\d{1,2})?)"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
+DATE_LIKE_TOKEN_REGEX = re.compile(
+    r"^\s*"
+    r"\d{1,4}[./-]\d{1,4}[./-]\d{1,4}"
+    r"\s*$"
+)
+
+
+UNIT_PRICE_REGEX = re.compile(
+    r"(?:"
+    r"₹|rs\.?|inr"
+    r")?\s*\d+(?:\.\d{1,2})?\s*/\s*"
+    r"(?:g|kg|mg|ml|l|unit|piece|pc)\b",
+    re.IGNORECASE,
+)
+
+
+UNIT_VALUE_REGEX = re.compile(
+    r"\b(?:"
+    r"g|gm|gms|kg|mg|ml|l|ltr|litre|liter|pcs|pieces|pc"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _clean_mrp_candidate(value):
+    """
+    Validate a possible MRP value.
+
+    Rejects:
+        dates
+        unit prices
+        quantities
+        non-numeric fragments
+    """
+    value = str(value or "").strip()
+
+    if not value:
+        return None
+
+    if DATE_LIKE_TOKEN_REGEX.fullmatch(value):
+        return None
+
+    if UNIT_PRICE_REGEX.search(value):
+        return None
+
+    if UNIT_VALUE_REGEX.search(value):
+        return None
+
+    match = MRP_NUMBER_REGEX.fullmatch(value)
+
+    if not match:
+        return None
+
+    numeric_value = match.group(1)
+
+    try:
+        number = float(numeric_value)
+    except ValueError:
+        return None
+
+    if number <= 0:
+        return None
+
+    return numeric_value
+
+
+def _match_mrp_value(value):
+    """
+    Match a complete OCR token as an MRP value.
+    """
+    value = str(value or "").strip()
+
+    if not value:
+        return None
+
+    cleaned = _clean_mrp_candidate(value)
+
+    if cleaned is None:
+        return None
+
+    return re.fullmatch(
+        r"\d{1,5}(?:\.\d{1,2})?",
+        cleaned,
     )
-
-    if evidence:
-        result["evidence"] = evidence
-
-    return result
-
 
 
 def extract_mrp(text, ocr_data=None):
     """
-    Detect Maximum Retail Price (MRP).
+    Detect Maximum Retail Price conservatively.
 
-    Strategy:
-    1. Prefer MRP + value on the same OCR line.
-    2. Otherwise search for a nearby monetary value.
-    3. Reject dates, quantities, unit prices, nutrition values,
-       and suspicious OCR fragments.
-    4. If the MRP label is present but a reliable value cannot
-       be associated with it, return REVIEW via value_missing.
+    Supports:
+
+        MRP 180
+        MRP180
+        MRP: ₹180
+        M.R.P. 180
+        M. R. P. 180
+        M.R.P.. 235.35
     """
-
     text = text or ""
 
-    # ---------------------------------------------------------
-    # Patterns
-    # ---------------------------------------------------------
-
-    mrp_pattern = _search(
-        r"\b(?:m\.?\s*r\.?\s*p\.?|mrp)\b",
-        text,
-    )
-
-    money_pattern = re.compile(
-        r"(?:₹|rs\.?|inr)?\s*"
-        r"\d{1,5}(?:\.\d{1,2})?",
-        re.IGNORECASE,
-    )
-
-    strict_money_pattern = re.compile(
-        r"^(?:₹|rs\.?|inr)?\s*"
-        r"\d{1,5}(?:\.\d{1,2})?$",
-        re.IGNORECASE,
-    )
-
-    date_pattern = re.compile(
-        r"^\d{1,4}"
-        r"(?:[\/\-.]\d{1,2})"
-        r"(?:[\/\-.]\d{1,4})$"
-    )
-
-    unit_pattern = re.compile(
-        r"\b(?:g|gm|gms|kg|mg|ml|l|ltr|litre|liter)\b",
-        re.IGNORECASE,
-    )
-
-    unit_price_pattern = re.compile(
-        r"(?:₹|rs\.?|inr)?\s*\d+(?:\.\d{1,2})?\s*/\s*"
-        r"(?:g|kg|ml|l|unit|piece|pc)\b",
-        re.IGNORECASE,
-    )
-
-    # ---------------------------------------------------------
-    # No MRP label
-    # ---------------------------------------------------------
-
-    if not mrp_pattern:
-        return {
-            "detected": False,
-            "matched_text": None,
-        }
-
-    # ---------------------------------------------------------
-    # Helper: validate candidate
-    # ---------------------------------------------------------
-
-    def clean_candidate(value):
-        value = str(value).strip()
-
-        # Remove common currency prefixes
-        value = re.sub(
-            r"^(?:₹|rs\.?|inr)\s*",
-            "",
-            value,
-            flags=re.IGNORECASE,
-        )
-
-        value = value.strip(" :.-")
-
-        if not value:
-            return None
-
-        # Reject dates
-        if date_pattern.fullmatch(value):
-            return None
-
-        # Reject obvious unit prices
-        if unit_price_pattern.search(value):
-            return None
-
-        # Reject quantities
-        if unit_pattern.search(value):
-            return None
-
-        # Must be a clean monetary number
-        if not re.fullmatch(
-            r"\d{1,5}(?:\.\d{1,2})?",
-            value,
-        ):
-            return None
-
-        try:
-            number = float(value)
-        except ValueError:
-            return None
-
-        # MRP should be positive
-        if number <= 0:
-            return None
-
-        return value
-
-    # ---------------------------------------------------------
-    # 1. Same-line MRP + value
-    # ---------------------------------------------------------
-
+    # ------------------------------------------------------------------
+    # Same-line / attached
+    # ------------------------------------------------------------------
     for line in text.splitlines():
-
         if not re.search(
-            r"\b(?:m\.?\s*r\.?\s*p\.?|mrp)\b",
+            MRP_LABEL_REGEX,
             line,
             re.IGNORECASE,
         ):
             continue
 
-        # Avoid treating dates as MRP values
-        candidates = money_pattern.findall(line)
-
-        for candidate in candidates:
-
-            cleaned = clean_candidate(candidate)
-
-            if not cleaned:
-                continue
-
-            # Prevent extracting a partial number from
-            # suspicious OCR fragments such as:
-            # "1 42.00(0 6"
-            suspicious_fragment = re.search(
-                r"\d+\s+\d+\.\d+",
-                line,
-            )
-
-            if suspicious_fragment:
-                continue
-
-            return {
-                "detected": True,
-                "matched_text": f"MRP {cleaned}",
-                "evidence": _find_evidence(
-                    candidate,
-                    ocr_data,
-                ),
-            }
-
-    # ---------------------------------------------------------
-    # 2. Spatial OCR search
-    # ---------------------------------------------------------
-
-    if ocr_data is None:
-        return {
-            "detected": True,
-            "matched_text": mrp_pattern.group(0),
-            "value_missing": True,
-        }
-
-    rows = ocr_data.copy()
-
-    if rows.empty:
-        return {
-            "detected": True,
-            "matched_text": mrp_pattern.group(0),
-            "value_missing": True,
-        }
-
-    # Locate OCR rows containing MRP
-    label_rows = rows[
-        rows["text"].astype(str).str.contains(
-            r"\b(?:m\.?\s*r\.?\s*p\.?|mrp)\b",
-            case=False,
-            regex=True,
-            na=False,
-        )
-    ]
-
-    candidates = []
-
-    for _, label in label_rows.iterrows():
-
-        label_text = str(label["text"]).strip()
-
-        # Ignore OCR rows where MRP appears as part of
-        # another unrelated word.
-        if not re.search(
-            r"\b(?:m\.?\s*r\.?\s*p\.?|mrp)\b",
-            label_text,
+        match = re.search(
+            MRP_LABEL_REGEX
+            + r"\s*[:=\-\.]?\s*"
+            + r"(?:₹\s*|rs\.?\s*|inr\s*)?"
+            + r"(\d{1,5}(?:\.\d{1,2})?)",
+            line,
             re.IGNORECASE,
-        ):
+        )
+
+        if not match:
             continue
 
-        label_left = float(label["left"])
-        label_top = float(label["top"])
-        label_right = float(label["right"])
-        label_bottom = float(label["bottom"])
-
-        label_cx = (label_left + label_right) / 2
-        label_cy = (label_top + label_bottom) / 2
-
-        for _, row in rows.iterrows():
-
-            candidate_text = str(row["text"]).strip()
-
-            if not candidate_text:
-                continue
-
-            # Do not compare the MRP label against itself
-            if row.name == label.name:
-                continue
-
-            # -------------------------------------------------
-            # Extract only clean monetary-looking candidates
-            # -------------------------------------------------
-
-            raw_candidates = money_pattern.findall(
-                candidate_text
-            )
-
-            for raw_candidate in raw_candidates:
-
-                cleaned = clean_candidate(raw_candidate)
-
-                if not cleaned:
-                    continue
-
-                # If the complete OCR token contains unrelated
-                # characters around the number, be conservative.
-                #
-                # Example:
-                # "1 42.00(0 6"
-                #
-                # We do not trust "42.00" extracted from this.
-                if not strict_money_pattern.fullmatch(
-                    candidate_text
-                ):
-                    # Allow simple currency prefixes / punctuation
-                    simplified = candidate_text.strip(
-                        " :₹"
-                    )
-
-                    if not strict_money_pattern.fullmatch(
-                        simplified
-                    ):
-                        continue
-
-                candidate_left = float(row["left"])
-                candidate_top = float(row["top"])
-                candidate_right = float(row["right"])
-                candidate_bottom = float(row["bottom"])
-
-                candidate_cx = (
-                    candidate_left + candidate_right
-                ) / 2
-
-                candidate_cy = (
-                    candidate_top + candidate_bottom
-                ) / 2
-
-                # -------------------------------------------------
-                # Horizontal candidate:
-                # MRP  →  50.00
-                # -------------------------------------------------
-
-                horizontal_gap = (
-                    candidate_left - label_right
-                )
-
-                vertical_diff = abs(
-                    candidate_cy - label_cy
-                )
-
-                if (
-                    horizontal_gap >= 0
-                    and horizontal_gap <= 350
-                    and vertical_diff <= 250
-                ):
-                    distance = (
-                        horizontal_gap
-                        + vertical_diff
-                    )
-
-                    candidates.append(
-                        (
-                            0,
-                            distance,
-                            float(row.get("conf", 0)),
-                            cleaned,
-                            row,
-                        )
-                    )
-
-                # -------------------------------------------------
-                # Vertical candidate:
-                # MRP
-                # 50.00
-                # -------------------------------------------------
-
-                vertical_gap = (
-                    candidate_top - label_bottom
-                )
-
-                horizontal_diff = abs(
-                    candidate_cx - label_cx
-                )
-
-                if (
-                    vertical_gap >= 0
-                    and vertical_gap <= 350
-                    and horizontal_diff <= 250
-                ):
-                    distance = (
-                        vertical_gap
-                        + horizontal_diff
-                    )
-
-                    candidates.append(
-                        (
-                            1,
-                            distance,
-                            float(row.get("conf", 0)),
-                            cleaned,
-                            row,
-                        )
-                    )
-
-    # ---------------------------------------------------------
-    # 3. Select strongest spatial candidate
-    # ---------------------------------------------------------
-
-    if candidates:
-
-        candidates.sort(
-            key=lambda x: (
-                x[0],
-                x[1],
-                -x[2],
-            )
+        value = _clean_mrp_candidate(
+            match.group(1)
         )
 
-        _, _, confidence, value, row = candidates[0]
+        if value is None:
+            continue
 
-        evidence = {
-            "text": str(row["text"]),
-            "confidence": confidence,
-            "bbox": {
-                "x1": int(row["left"]),
-                "y1": int(row["top"]),
-                "x2": int(row["right"]),
-                "y2": int(row["bottom"]),
-            },
-        }
-
-        return {
+        result = {
             "detected": True,
-            "matched_text": f"MRP {value}",
-            "evidence": evidence,
+            "matched_text": match.group(0),
         }
 
-    # ---------------------------------------------------------
-    # 4. MRP label found, but value cannot be trusted
-    # ---------------------------------------------------------
+        evidence = _find_evidence(
+            match.group(0),
+            ocr_data,
+        )
 
-    evidence = _find_evidence(
-        mrp_pattern.group(0),
+        if evidence:
+            result["evidence"] = evidence
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Spatial
+    # ------------------------------------------------------------------
+    label_rows = _find_label_rows(
+        MRP_LABEL_REGEX,
         ocr_data,
     )
 
-    result = {
-        "detected": True,
-        "matched_text": mrp_pattern.group(0),
-        "value_missing": True,
-    }
+    candidates = []
 
-    if evidence:
-        result["evidence"] = evidence
+    for label_row in label_rows:
+        label_text = str(
+            label_row.get("text", "")
+        ).strip()
 
-    return result
+        # Attached value inside same OCR token.
+        attached_match = re.search(
+            MRP_LABEL_REGEX
+            + r"\s*[:=\-\.]?\s*"
+            + r"(?:₹\s*|rs\.?\s*|inr\s*)?"
+            + r"(\d{1,5}(?:\.\d{1,2})?)",
+            label_text,
+            re.IGNORECASE,
+        )
 
+        if attached_match:
+            value = _clean_mrp_candidate(
+                attached_match.group(1)
+            )
 
-    
-def extract_consumer_care(text, ocr_data=None):
-    """
-    Detect consumer-care / complaint contact information.
+            if value:
+                result = {
+                    "detected": True,
+                    "matched_text": f"MRP {value}",
+                }
 
-    Supports common package declarations such as:
-        Consumer Care
-        Customer Care
-        Consumer Complaints
-        Customer Service
-        Toll Free
-        Helpline
-        Contact Us
-        Call Us
-        Write To
-        Email Us
+                evidence = _evidence_from_row(
+                    label_row
+                )
 
-    Also detects email addresses and Indian toll-free /
-    customer-care phone numbers.
+                if evidence:
+                    result["evidence"] = evidence
 
-    OCR evidence is attached when available.
-    """
+                return result
 
-    text = text or ""
+        spatial = _spatial_candidates(
+            label_row,
+            ocr_data,
+            _match_mrp_value,
+            max_right_gap=700,
+            max_right_y_diff=220,
+            max_below_gap=600,
+            max_below_x_diff=500,
+        )
 
-    # ---------------------------------------------------------
-    # 1. Explicit consumer/customer care wording
-    # ---------------------------------------------------------
+        for candidate in spatial:
+            candidate["label_row"] = label_row
 
-    care_pattern = _search(
-        r"(consumer\s+care|customer\s+care|"
-        r"consumer\s+complaints?|customer\s+complaints?|"
-        r"customer\s+service|consumer\s+service)",
+            candidate_text = candidate["text"]
+
+            if DATE_LIKE_TOKEN_REGEX.fullmatch(
+                candidate_text
+            ):
+                candidate["geometry_score"] -= 200
+
+            if UNIT_PRICE_REGEX.search(
+                candidate_text
+            ):
+                candidate["geometry_score"] -= 200
+
+            if UNIT_VALUE_REGEX.search(
+                candidate_text
+            ):
+                candidate["geometry_score"] -= 200
+
+            candidates.append(candidate)
+
+    valid_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate["geometry_score"] > 0
+    ]
+
+    best = _best_spatial_candidate(
+        valid_candidates
+    )
+
+    if best:
+        value = _clean_mrp_candidate(
+            best["text"]
+        )
+
+        if value:
+            result = {
+                "detected": True,
+                "matched_text": (
+                    f"{str(best['label_row'].get('text', '')).strip()} "
+                    f"{value}"
+                ),
+            }
+
+            evidence = _evidence_from_row(
+                best["row"],
+                text_override=best["text"],
+            )
+
+            if evidence:
+                result["evidence"] = evidence
+
+            return result
+
+    # ------------------------------------------------------------------
+    # Label exists but value missing
+    # ------------------------------------------------------------------
+    label_pattern = _search(
+        MRP_LABEL_REGEX,
         text,
     )
 
-    # ---------------------------------------------------------
-    # 2. Contact / complaint instructions
-    # ---------------------------------------------------------
+    if label_pattern:
+        result = {
+            "detected": True,
+            "matched_text": label_pattern.group(0),
+            "value_missing": True,
+        }
+
+        evidence = _find_evidence(
+            label_pattern.group(0),
+            ocr_data,
+        )
+
+        if evidence:
+            result["evidence"] = evidence
+
+        return result
+
+    return {
+        "detected": False,
+        "matched_text": None,
+    }
+
+
+# ============================================================================
+# CONSUMER CARE
+# ============================================================================
+
+def extract_consumer_care(text, ocr_data=None):
+    """
+    Detect consumer-care / complaint contact information.
+    """
+    text = text or ""
+
+    care_pattern = _search(
+        r"(consumer\s+care|"
+        r"customer\s+care|"
+        r"consumer\s+complaints?|"
+        r"customer\s+complaints?|"
+        r"customer\s+service|"
+        r"consumer\s+service)",
+        text,
+    )
 
     complaint_pattern = _search(
         r"(?:in\s+case\s+of\s+any\s+)?"
@@ -1132,26 +1085,22 @@ def extract_consumer_care(text, ocr_data=None):
     )
 
     contact_pattern = _search(
-        r"(write\s+to|contact\s+us|reach\s+us|"
-        r"email\s+us|call\s+us|write\s+us)",
+        r"(write\s+to|"
+        r"contact\s+us|"
+        r"reach\s+us|"
+        r"email\s+us|"
+        r"call\s+us|"
+        r"write\s+us)",
         text,
     )
 
-    # ---------------------------------------------------------
-    # 3. Toll-free / helpline wording
-    # ---------------------------------------------------------
-
     tollfree_pattern = _search(
-        r"(toll[\s\-]*free|"
+        r"(?:toll[\s-]*free|"
         r"helpline|"
         r"help\s*line|"
         r"hotline)",
         text,
     )
-
-    # ---------------------------------------------------------
-    # 4. Email address
-    # ---------------------------------------------------------
 
     email_pattern = _search(
         r"\b[a-z0-9._%+\-]+"
@@ -1159,44 +1108,30 @@ def extract_consumer_care(text, ocr_data=None):
         text,
     )
 
-    # ---------------------------------------------------------
-    # 5. Indian customer-care / toll-free phone number
-    # ---------------------------------------------------------
-
     phone_pattern = _search(
         r"\b(?:1800|1860)"
-        r"[\s\-]?"
+        r"[\s-]?"
         r"\d{2,4}"
-        r"[\s\-]?"
+        r"[\s-]?"
         r"\d{3,4}\b",
         text,
     )
 
-    # ---------------------------------------------------------
-    # 6. Select strongest evidence
-    # ---------------------------------------------------------
-
-    patterns = [
-        care_pattern,
-        complaint_pattern,
-        contact_pattern,
-        tollfree_pattern,
-        email_pattern,
-        phone_pattern,
-    ]
-
     matched = next(
         (
             pattern
-            for pattern in patterns
+            for pattern in (
+                care_pattern,
+                complaint_pattern,
+                contact_pattern,
+                tollfree_pattern,
+                email_pattern,
+                phone_pattern,
+            )
             if pattern
         ),
         None,
     )
-
-    # ---------------------------------------------------------
-    # 7. Build result
-    # ---------------------------------------------------------
 
     result = {
         "detected": matched is not None,
@@ -1206,10 +1141,6 @@ def extract_consumer_care(text, ocr_data=None):
             else None
         ),
     }
-
-    # ---------------------------------------------------------
-    # 8. Attach OCR evidence
-    # ---------------------------------------------------------
 
     if matched:
         evidence = _find_evidence(
@@ -1223,9 +1154,13 @@ def extract_consumer_care(text, ocr_data=None):
     return result
 
 
+# ============================================================================
+# COUNTRY OF ORIGIN
+# ============================================================================
+
 def extract_country_of_origin(text, ocr_data=None):
     pattern = _search(
-        r"(country of origin|made in)"
+        r"(country\s+of\s+origin|made\s+in)"
         r"\D{0,20}[a-z]+",
         text,
     )
@@ -1240,6 +1175,10 @@ def extract_country_of_origin(text, ocr_data=None):
     return result
 
 
+# ============================================================================
+# MAIN EXTRACTION
+# ============================================================================
+
 def extract_declarations(
     raw_text,
     compliance_text=None,
@@ -1248,13 +1187,8 @@ def extract_declarations(
     """
     Extract all currently supported declarations.
 
-    The focused compliance OCR is searched first by placing it
-    before the full-page OCR text.
-
-    When ``ocr_data`` is supplied, matching OCR evidence is
-    attached to detected declarations.
+    Output contract is intentionally preserved for validator.py.
     """
-
     if compliance_text:
         text = (
             f"{compliance_text}\n"
@@ -1264,33 +1198,40 @@ def extract_declarations(
         text = raw_text or ""
 
     return {
-        "manufacturer_packer_importer": extract_manufacturer(
-            text,
-            ocr_data,
+        "manufacturer_packer_importer": (
+            extract_manufacturer(
+                text,
+                ocr_data,
+            )
         ),
-
-        "net_quantity": extract_net_quantity(
-            text,
-            ocr_data,
+        "net_quantity": (
+            extract_net_quantity(
+                text,
+                ocr_data,
+            )
         ),
-
-        "manufacture_date": extract_manufacture_date(
-            text,
-            ocr_data,
+        "manufacture_date": (
+            extract_manufacture_date(
+                text,
+                ocr_data,
+            )
         ),
-
-        "mrp": extract_mrp(
-            text,
-            ocr_data,
+        "mrp": (
+            extract_mrp(
+                text,
+                ocr_data,
+            )
         ),
-
-        "consumer_care": extract_consumer_care(
-            text,
-            ocr_data,
+        "consumer_care": (
+            extract_consumer_care(
+                text,
+                ocr_data,
+            )
         ),
-
-        "country_of_origin": extract_country_of_origin(
-            text,
-            ocr_data,
+        "country_of_origin": (
+            extract_country_of_origin(
+                text,
+                ocr_data,
+            )
         ),
     }

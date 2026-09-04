@@ -15,6 +15,9 @@ from typing import Any, Optional
 class ScanRecord:
     """
     Represents one analysis performed on a product image.
+
+    The complete analysis result is stored so a previous scan can
+    be opened again without running OCR a second time.
     """
 
     scan_id: str
@@ -24,6 +27,11 @@ class ScanRecord:
     image_quality: Optional[dict[str, Any]] = None
     ocr: Optional[dict[str, Any]] = None
     compliance: Optional[dict[str, Any]] = None
+
+    # Complete analysis response for historical result reconstruction.
+    # Optional for backward compatibility with scans created before
+    # full analysis persistence was introduced.
+    analysis: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the scan record into a JSON-compatible dictionary."""
@@ -35,6 +43,7 @@ class ScanRecord:
             "image_quality": self.image_quality,
             "ocr": self.ocr,
             "compliance": self.compliance,
+            "analysis": self.analysis,
         }
 
 

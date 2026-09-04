@@ -51,9 +51,11 @@ function statusBadge(status: string) {
 }
 
 function overallBadge(status: string) {
-  if (status === "PASS") {
+  // Backend MVP status:
+  // 5/5 FOUND -> COMPLIANT
+  if (status === "COMPLIANT" || status === "PASS") {
     return {
-      label: "PASS",
+      label: "COMPLIANT",
       bg: "bg-civic-success/10",
       text: "text-civic-success",
       border: "border-civic-success/30",
@@ -110,8 +112,6 @@ function displayValue(value: unknown): string {
       unit?: unknown;
     };
 
-    // Handles backend nutrition objects such as:
-    // { value: 553, unit: "kcal" }
     if (
       Object.prototype.hasOwnProperty.call(objectValue, "value") ||
       Object.prototype.hasOwnProperty.call(objectValue, "unit")
@@ -122,7 +122,6 @@ function displayValue(value: unknown): string {
       return [numericValue, unit].filter(Boolean).join(" ");
     }
 
-    // Defensive fallback for any future structured backend value.
     try {
       return JSON.stringify(value);
     } catch {
@@ -208,6 +207,12 @@ function ComplianceSection({
     ComplianceCheck
   ][];
 
+  const detected =
+    compliance.mandatory_declarations_detected ?? 0;
+
+  const total =
+    compliance.mandatory_declarations_total ?? 0;
+
   return (
     <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
       {/* Summary header */}
@@ -226,16 +231,18 @@ function ComplianceSection({
               Legal Metrology Compliance
             </p>
 
-            <p className={`text-2xl font-bold ${text}`}>{label}</p>
+            <p className={`text-2xl font-bold ${text}`}>
+              {label}
+            </p>
           </div>
         </div>
 
         <div className="text-right">
           <p className="text-3xl font-bold text-civic-text tabular-nums">
-            {compliance.mandatory_declarations_detected ?? 0}
+            {detected}
 
             <span className="text-civic-muted font-normal text-xl">
-              /{compliance.mandatory_declarations_total ?? 0}
+              /{total}
             </span>
           </p>
 
@@ -274,14 +281,17 @@ function ComplianceSection({
                     className="text-xs text-civic-secondary mt-1 truncate"
                     title={displayValue(check.matched_text)}
                   >
-                    <span className="text-civic-muted">Detected: </span>
+                    <span className="text-civic-muted">
+                      Detected:{" "}
+                    </span>
                     {displayValue(check.matched_text)}
                   </p>
                 )}
 
                 {check.conditional && (
                   <p className="text-[10px] text-amber-500 mt-1">
-                    Conditionally required — may not apply to all products
+                    Conditionally required — may not apply to all
+                    products
                   </p>
                 )}
 
@@ -411,8 +421,8 @@ function AllergensSection({
       )}
 
       <p className="text-[10px] text-civic-muted mt-4 leading-relaxed">
-        Allergen information is extracted from the label. Always verify with
-        the physical product.
+        Allergen information is extracted from the label. Always
+        verify with the physical product.
       </p>
     </SectionCard>
   );
@@ -422,63 +432,41 @@ function AllergensSection({
 // Nutrition section
 // ──────────────────────────────────────────────────────────────────────────────
 
-function NutritionSection({
-  nutrition,
-}: {
-  nutrition: AnalyzeResponse["data"]["nutrition"];
-}) {
-  if (!nutrition || Object.keys(nutrition).length === 0) {
-    return (
-      <SectionCard
-        title="Nutrition Information"
-        icon={<FlaskConical className="w-4 h-4" />}
-      >
-        <p className="text-sm text-civic-muted italic">
-          Nutrition information could not be reliably extracted.
-        </p>
-      </SectionCard>
-    );
-  }
-
-  const entries = Object.entries(nutrition);
-
+function NutritionSection() {
   return (
     <SectionCard
-      title="Nutrition Information"
+      title="Advanced Nutrition Analysis"
       icon={<FlaskConical className="w-4 h-4" />}
     >
-      <p className="text-[10px] text-civic-muted uppercase tracking-wider mb-3">
-        Per 100 g (as labelled)
-      </p>
+      <div className="py-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+            Coming Soon
+          </span>
+        </div>
 
-      <div className="divide-y divide-zinc-100">
-        {entries.map(([key, value], i) => (
-          <div
-            key={key}
-            className={`flex items-center justify-between gap-4 py-2.5 ${
-              i === 0 ? "border-t border-zinc-200 pt-3" : ""
-            }`}
-          >
-            <span
-              className={`text-sm text-civic-text ${
-                ["Energy", "Total Fat", "Carbohydrates", "Protein"].includes(
-                  key
-                )
-                  ? "font-semibold"
-                  : "font-normal pl-3 text-civic-secondary"
-              }`}
-            >
-              {key}
-            </span>
+        <h3 className="text-sm font-semibold text-civic-text mb-2">
+          Detailed nutrition analysis
+        </h3>
 
-            {/* IMPORTANT:
-                Never render a backend object directly.
-                Nutrition values may be { value, unit }. */}
-            <span className="text-sm font-medium text-civic-text tabular-nums text-right">
-              {displayValue(value) || "—"}
-            </span>
-          </div>
-        ))}
+        <p className="text-sm text-civic-muted leading-relaxed">
+          Automated extraction of calories, macronutrients, and
+          detailed nutrition-table values will be available in a
+          future version.
+        </p>
+
+        <div className="flex flex-wrap gap-2 mt-4">
+          {["Calories", "Macronutrients", "Nutrition Table"].map(
+            (item) => (
+              <span
+                key={item}
+                className="text-[11px] px-2.5 py-1 rounded-md bg-zinc-50 border border-zinc-200 text-zinc-500"
+              >
+                {item}
+              </span>
+            )
+          )}
+        </div>
       </div>
     </SectionCard>
   );
@@ -518,8 +506,8 @@ function EvidenceSection({
       )}
 
       <p className="text-[10px] text-civic-muted mt-3">
-        OCR bounding-box overlays and region detection will appear here when
-        the backend exposes that information.
+        OCR bounding-box overlays and region detection will appear
+        here when the backend exposes that information.
       </p>
     </SectionCard>
   );
@@ -569,7 +557,6 @@ export default function Results({
 }: ResultsProps) {
   const prefersReduced = useReducedMotion();
 
-  // Defensive guards so a partially malformed response doesn't blank the page.
   if (!result || !result.data) {
     return (
       <div className="min-h-[calc(100vh-3.5rem)] pt-14 bg-civic-bg">
@@ -601,16 +588,23 @@ export default function Results({
   const data = result.data;
   const warnings = result.warnings ?? [];
   const errors = result.errors ?? [];
+const compliance = data.legal_metrology_compliance ?? {
+  overall_status: "REVIEW" as const,
+  checks: {},
+  mandatory_declarations_detected: 0,
+  mandatory_declarations_total: 0,
+};
 
-  const compliance =
-    data.legal_metrology_compliance ?? {
-      overall_status: "REVIEW" as const,
-      checks: {},
-      mandatory_declarations_detected: 0,
-      mandatory_declarations_total: 0,
-    };
+const complianceStatus =
+  compliance.overall_status as string;
 
-  const containerVariants = {
+const complianceHighlight =
+  complianceStatus === "COMPLIANT" ||
+  complianceStatus === "PASS"
+    ? "text-civic-success"
+    : complianceStatus === "REVIEW"
+    ? "text-amber-500"
+    : "text-red-500";  const containerVariants = {
     hidden: {},
     show: {
       transition: {
@@ -634,11 +628,9 @@ export default function Results({
       },
     },
   };
-
-  const ingredientCount = Array.isArray(data.ingredients)
-    ? data.ingredients.length
-    : 0;
-
+const ingredientCount = Array.isArray(data.ingredients)
+  ? data.ingredients.length
+  : 0;
   return (
     <div className="min-h-[calc(100vh-3.5rem)] pt-14 bg-civic-bg">
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -676,14 +668,12 @@ export default function Results({
           {[
             {
               label: "Compliance",
-              value: compliance.overall_status,
+              value:
+                complianceStatus === "PASS"
+                  ? "COMPLIANT"
+                  : complianceStatus,
               sub: "",
-              highlight:
-                compliance.overall_status === "PASS"
-                  ? "text-civic-success"
-                  : compliance.overall_status === "REVIEW"
-                  ? "text-amber-500"
-                  : "text-red-500",
+              highlight: complianceHighlight,
             },
             {
               label: "Declarations",
@@ -783,8 +773,6 @@ export default function Results({
                   value={data.quantity}
                 />
 
-                {/* MRP may currently be available through
-                    compliance extraction rather than top-level data. */}
                 <Field
                   label="MRP"
                   value={
@@ -837,9 +825,7 @@ export default function Results({
               allergens={data.allergens ?? null}
             />
 
-            <NutritionSection
-              nutrition={data.nutrition ?? null}
-            />
+            <NutritionSection />
           </motion.div>
 
           {/* Errors */}
@@ -900,8 +886,8 @@ export default function Results({
             className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-zinc-200"
           >
             <p className="text-[11px] text-civic-muted text-center sm:text-left">
-              Results are based on OCR extraction and should be verified
-              against the physical product label.
+              Results are based on OCR extraction and should be
+              verified against the physical product label.
             </p>
 
             <button

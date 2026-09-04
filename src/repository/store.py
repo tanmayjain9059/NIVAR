@@ -78,7 +78,8 @@ class ProductRepository:
                 image_quality=scan.get("image_quality"),
                 ocr=scan.get("ocr"),
                 compliance=scan.get("compliance"),
-            )
+                analysis=scan.get("analysis"),
+        )
             for scan in raw_product.get("scans", [])
         ]
 

@@ -48,6 +48,7 @@ class ProductService:
     def list_products(self) -> list[ProductRecord]:
         return self.repository.list_products()
 
+
     def add_analysis_scan(
         self,
         product_id: str,
@@ -56,12 +57,21 @@ class ProductService:
         image_quality: dict | None = None,
         ocr: dict | None = None,
     ) -> ScanRecord:
+        """
+        Persist a complete analysis result as a scan.
+
+        The original image is copied into permanent product storage.
+        A JSON-safe snapshot of the complete analysis result is stored
+        with the scan so History can reconstruct the original result
+        without running OCR again.
+        """
+
         product = self.repository.get_product(product_id)
 
         if product is None:
-            raise ValueError(f"Product does not exist: {product_id}")
-
-        scan_id = f"SCAN-{uuid4().hex[:12].upper()}"
+            raise ValueError(
+                f"Product does not exist: {product_id}"
+            )
 
         source_image = Path(image_path)
 
@@ -70,35 +80,83 @@ class ProductService:
                 f"Scan image does not exist: {source_image}"
             )
 
-        product_image_dir = self.image_storage_dir / product_id
-        product_image_dir.mkdir(parents=True, exist_ok=True)
+        scan_id = f"SCAN-{uuid4().hex[:12].upper()}"
+
+        product_image_dir = (
+            self.image_storage_dir / product_id
+        )
+        product_image_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
         destination_image = (
             product_image_dir
             / f"{scan_id}{source_image.suffix.lower()}"
         )
 
-        copy2(source_image, destination_image)
+        copy2(
+            source_image,
+            destination_image,
+        )
+
+        # Force the complete analysis result through JSON
+        # serialization so the persisted snapshot contains only
+        # JSON-compatible data.
+        import json
+
+        analysis_snapshot = json.loads(
+            json.dumps(
+                analysis_result,
+                ensure_ascii=False,
+                default=str,
+            )
+        )
 
         scan = ScanRecord(
             scan_id=scan_id,
             product_id=product_id,
             image_path=str(destination_image),
             timestamp=datetime.now().isoformat(),
-            image_quality=image_quality,
-            ocr=ocr,
-            compliance=analysis_result.get(
+            image_quality=(
+                image_quality
+                or analysis_snapshot.get("meta", {}).get(
+                    "image_quality"
+                )
+            ),
+            ocr=(
+                ocr
+                or analysis_snapshot.get("meta", {}).get("ocr")
+            ),
+            compliance=analysis_snapshot.get(
                 "legal_metrology_compliance"
             ),
+            analysis=analysis_snapshot,
         )
 
         try:
-            return self.repository.add_scan(scan)
+            saved_scan = self.repository.add_scan(scan)
+
+            # Verify that the complete analysis was actually attached
+            # to the scan before returning.
+            if saved_scan.analysis is None:
+                destination_image.unlink(
+                    missing_ok=True
+                )
+                raise RuntimeError(
+                    "Scan was saved without analysis_result."
+                )
+
+            return saved_scan
 
         except Exception:
-            destination_image.unlink(missing_ok=True)
+            destination_image.unlink(
+                missing_ok=True
+            )
             raise
 
+
+        
     def get_scan_history(
         self,
         product_id: str,
