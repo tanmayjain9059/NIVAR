@@ -251,7 +251,7 @@ def _status_color(status: str):
     }:
         return colors.HexColor("#B91C1C")
 
-    return colors.HexColor("#52525Z".replace("Z", ""))
+    return colors.HexColor("#52525B")
 
 
 # ============================================================
@@ -411,6 +411,37 @@ def _list_to_text(
 
 
 # ============================================================
+# REPORT METADATA HELPERS
+# ============================================================
+
+
+def _compliance_metadata_value(
+    compliance: dict[str, Any],
+    key: str,
+) -> Any:
+    """
+    Reuse an already-detected core compliance value for the
+    report summary instead of running any new extraction.
+    """
+
+    checks = _extract_checks(compliance)
+    check = checks.get(key)
+
+    if not isinstance(check, dict):
+        return None
+
+    status = _status(check.get("status"))
+
+    if status not in {
+        "FOUND",
+        "REVIEW",
+    }:
+        return None
+
+    return _extract_detected_value(check)
+
+
+# ============================================================
 # PDF STYLES
 # ============================================================
 
@@ -525,6 +556,23 @@ def _key_value_table(
     table_data = []
 
     for label, value in rows:
+        # Keep the report focused on information that is actually
+        # available. "Not available", empty strings, and None are
+        # omitted instead of creating repeated placeholder rows.
+        if value is None:
+            continue
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if not normalized or normalized in {
+                "not available",
+                "n/a",
+                "na",
+                "none",
+                "null",
+            }:
+                continue
+
         table_data.append(
             [
                 Paragraph(
@@ -539,17 +587,9 @@ def _key_value_table(
         )
 
     if not table_data:
-        table_data.append(
-            [
-                Paragraph(
-                    "No data",
-                    styles["small"],
-                ),
-                Paragraph(
-                    "Not available",
-                    styles["small"],
-                ),
-            ]
+        return Paragraph(
+            "No additional information available.",
+            styles["small"],
         )
 
     table = Table(
@@ -1373,12 +1413,54 @@ def generate_pdf_report(
     ):
         meta = {}
 
+    compliance = analysis.get(
+        "legal_metrology_compliance"
+    )
+
+    if not isinstance(
+        compliance,
+        dict,
+    ):
+        compliance = {}
+
     report_timestamp = (
         datetime.now()
         .astimezone()
         .strftime(
             "%d %b %Y, %I:%M %p"
         )
+    )
+
+    # The structured result may not have populated product-level
+    # metadata even though the compliance engine has already found
+    # the same information. Reuse that stored evidence here.
+    manufacturer = (
+        analysis.get("manufacturer")
+        or _compliance_metadata_value(
+            compliance,
+            "manufacturer_packer_importer",
+        )
+    )
+
+    quantity = (
+        analysis.get("quantity")
+        or _compliance_metadata_value(
+            compliance,
+            "net_quantity",
+        )
+    )
+
+    manufacturing_date = (
+        analysis.get("manufacturing_date")
+        or _compliance_metadata_value(
+            compliance,
+            "manufacture_date",
+        )
+    )
+
+    mrp = _compliance_metadata_value(
+        compliance,
+        "mrp",
     )
 
     story.append(
@@ -1399,9 +1481,7 @@ def generate_pdf_report(
                 ),
                 (
                     "Manufacturer",
-                    analysis.get(
-                        "manufacturer"
-                    ),
+                    manufacturer,
                 ),
                 (
                     "Barcode",
@@ -1411,15 +1491,15 @@ def generate_pdf_report(
                 ),
                 (
                     "Net Quantity",
-                    analysis.get(
-                        "quantity"
-                    ),
+                    quantity,
                 ),
                 (
                     "Manufacture Date",
-                    analysis.get(
-                        "manufacturing_date"
-                    ),
+                    manufacturing_date,
+                ),
+                (
+                    "MRP",
+                    mrp,
                 ),
                 (
                     "Expiry Date",
@@ -1464,16 +1544,6 @@ def generate_pdf_report(
     # --------------------------------------------------------
     # COMPLIANCE
     # --------------------------------------------------------
-
-    compliance = analysis.get(
-        "legal_metrology_compliance"
-    )
-
-    if not isinstance(
-        compliance,
-        dict,
-    ):
-        compliance = {}
 
     story.extend(
         _section_heading(
