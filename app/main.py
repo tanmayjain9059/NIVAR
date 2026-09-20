@@ -43,6 +43,7 @@ def _load_gui_dependencies():
     ImageTk = _ImageTk
 
 from src.ocr.preprocessing import preprocess_image
+from src.product_intelligence import identify_product
 from src.ocr.engine import (
     build_ocr_summary,
     run_ocr,
@@ -639,6 +640,15 @@ def process_image(file_path, config=CONFIG):
         ocr_data=data,
     )
 
+
+    # --------------------------------------------------------
+    # PRODUCT IDENTITY
+    # --------------------------------------------------------
+
+    product_identity = identify_product(
+        raw_text,
+        ocr_data=data,
+    )
     # --------------------------------------------------------
     # RESULTS
     # --------------------------------------------------------
@@ -708,7 +718,45 @@ def process_image(file_path, config=CONFIG):
     )
 
     structured_result["image_quality"] = image_quality
+    structured_result["product_identity"] = (
+        product_identity
+    )
 
+    structured_result["product_name"] = (
+        product_identity.get(
+            "product_name"
+        )
+    )
+
+    structured_result["product_name_confidence"] = (
+        product_identity.get(
+            "product_name_confidence"
+        )
+    )
+
+    structured_result["product_name_evidence"] = (
+        product_identity.get(
+            "product_name_evidence"
+        )
+    )
+
+    structured_result["brand"] = (
+        product_identity.get(
+            "brand"
+        )
+    )
+
+    structured_result["brand_confidence"] = (
+        product_identity.get(
+            "brand_confidence"
+        )
+    )
+
+    structured_result["brand_evidence"] = (
+        product_identity.get(
+            "brand_evidence"
+        )
+    )
 
     save_json_result(
         structured_result,

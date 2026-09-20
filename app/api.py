@@ -12,13 +12,20 @@ The OCR/compliance logic remains inside the existing analysis pipeline.
 
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-
+from fastapi import (
+    File,
+    HTTPException,
+    UploadFile,
+)
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from app.services.analyzer_service import analyze_image
+from app.services.analyzer_service import (
+    analyze_image,
+    analyze_product_images,
+)
 from app.services.product_service import ProductService
 from src.reporting import generate_pdf_report
 
@@ -97,137 +104,126 @@ def health_check():
 # ============================================================
 
 @app.post("/api/v1/analyze")
-async def analyze(
-    image: UploadFile = File(...),
+@app.post("/api/v1/products/analyze")
+async def analyze_product(
+    images: list[UploadFile] = File(...),
 ):
     """
-    Analyze an uploaded packaged-commodity image.
+    Analyze multiple images belonging to one packaged product.
 
-    Flow:
-        Upload
-        -> temporary file
-        -> OCR/compliance analysis
-        -> product creation
-        -> complete analysis persistence
-        -> API response
+    One request represents one product.
+    Multiple images are independently analyzed and then
+    fused into one product-level result.
     """
 
-    filename = image.filename or ""
+    if not images:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one image is required.",
+        )
 
-    extension = Path(filename).suffix.lower()
-
-    if extension not in ALLOWED_EXTENSIONS:
+    if len(images) > 8:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Unsupported image format. "
-                "Use JPG, JPEG, PNG or WEBP."
+                "A maximum of 8 images can be "
+                "analyzed in one product scan."
             ),
         )
 
+    temporary_paths = []
+
     try:
-        image_bytes = await image.read()
+        for image in images:
 
-        if not image_bytes:
-            raise HTTPException(
-                status_code=400,
-                detail="Uploaded image is empty.",
-            )
+            filename = image.filename or ""
 
-        with NamedTemporaryFile(
-            suffix=extension,
-            delete=False,
-        ) as temp_file:
-            temp_file.write(image_bytes)
-            temp_path = Path(temp_file.name)
+            extension = Path(
+                filename
+            ).suffix.lower()
 
-        try:
-            # ------------------------------------------------
-            # ANALYSIS
-            # ------------------------------------------------
-
-            result = analyze_image(temp_path)
-
-            if not isinstance(result, dict):
-                raise RuntimeError(
-                    "Image analysis returned an invalid result."
+            if extension not in ALLOWED_EXTENSIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Unsupported image format: "
+                        f"{filename}. "
+                        "Use JPG, JPEG, PNG or WEBP."
+                    ),
                 )
 
-            # ------------------------------------------------
-            # JSON-SAFE ANALYSIS SNAPSHOT
-            # ------------------------------------------------
-            #
-            # This is the exact result returned to the frontend
-            # and persisted for History.
-            #
-            # Keeping one canonical snapshot prevents the API,
-            # repository and History from receiving different
-            # representations of the same analysis.
+            image_bytes = await image.read()
 
-            import json
-
-            analysis_snapshot = json.loads(
-                json.dumps(
-                    result,
-                    ensure_ascii=False,
-                    default=str,
+            if not image_bytes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Uploaded image is empty: "
+                        f"{filename}"
+                    ),
                 )
+
+            with NamedTemporaryFile(
+                suffix=extension,
+                delete=False,
+            ) as temp_file:
+
+                temp_file.write(
+                    image_bytes
+                )
+
+                temporary_paths.append(
+                    Path(
+                        temp_file.name
+                    )
+                )
+
+        analysis = analyze_product_images(
+            temporary_paths
+        )
+
+        import json
+
+        analysis_snapshot = json.loads(
+            json.dumps(
+                analysis,
+                ensure_ascii=False,
+                default=str,
             )
+        )
 
-            # ------------------------------------------------
-            # PRODUCT CREATION
-            # ------------------------------------------------
+        product = product_service.create_product(
+            product_name=analysis_snapshot.get(
+                "product_name"
+            ),
+            brand=analysis_snapshot.get(
+                "brand"
+            ),
+            product_name_confidence=(
+                analysis_snapshot.get(
+                    "product_name_confidence"
+                )
+            ),
+            brand_confidence=(
+                analysis_snapshot.get(
+                    "brand_confidence"
+                )
+            ),
+        )
 
-            product = product_service.create_product(
-                product_name=analysis_snapshot.get(
-                    "product_name"
-                ),
-                brand=analysis_snapshot.get(
-                    "brand"
-                ),
-                barcode=analysis_snapshot.get(
-                    "barcode"
-                ),
-                manufacturer=analysis_snapshot.get(
-                    "manufacturer"
-                ),
-            )
-
-            # ------------------------------------------------
-            # SCAN PERSISTENCE
-            # ------------------------------------------------
-            #
-            # Persist the SAME complete analysis object that
-            # is returned to the frontend.
-            #
-            # History can therefore display the previous
-            # result without running OCR again.
-
-            product_service.add_analysis_scan(
-                product_id=product.product_id,
-                image_path=temp_path,
-                analysis_result=analysis_snapshot,
-                image_quality=analysis_snapshot.get(
-                    "image_quality"
-                ),
-                ocr=analysis_snapshot.get(
-                    "ocr"
-                ),
-            )
-
-        finally:
-            temp_path.unlink(
-                missing_ok=True
-            )
-
-        # ----------------------------------------------------
-        # RESPONSE
-        # ----------------------------------------------------
+        product_service.add_product_scan(
+            product_id=product.product_id,
+            image_paths=temporary_paths,
+            analysis_result=analysis_snapshot,
+        )
 
         return {
             "success": True,
             "api_version": "v1",
-            "data": analysis_snapshot,
+            "data": {
+                "product_id": product.product_id,
+                **analysis_snapshot,
+            },
             "warnings": [],
             "errors": [],
         }
@@ -235,13 +231,10 @@ async def analyze(
     except HTTPException:
         raise
 
-    except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
-
-    except ValueError as exc:
+    except (
+        FileNotFoundError,
+        ValueError,
+    ) as exc:
         raise HTTPException(
             status_code=400,
             detail=str(exc),
@@ -251,12 +244,16 @@ async def analyze(
         raise HTTPException(
             status_code=500,
             detail=(
-                "Image analysis failed: "
+                "Product analysis failed: "
                 f"{type(exc).__name__}: {exc}"
             ),
         ) from exc
 
-
+    finally:
+        for path in temporary_paths:
+            path.unlink(
+                missing_ok=True
+            )
 # ============================================================
 # PRODUCT HISTORY
 # ============================================================
