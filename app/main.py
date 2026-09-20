@@ -11,10 +11,37 @@ from pathlib import Path
 import cv2
 from src.image_quality.quality import assess_image_quality
 
-import tkinter as tk
-from tkinter import filedialog, messagebox
+# GUI dependencies are loaded lazily.
+# The FastAPI server does not need Tkinter.
+tk = None
+filedialog = None
+messagebox = None
+Image = None
+ImageTk = None
 
-from PIL import Image, ImageTk
+
+def _load_gui_dependencies():
+    global tk
+    global filedialog
+    global messagebox
+    global Image
+    global ImageTk
+
+    if tk is not None:
+        return
+
+    import tkinter as _tk
+    from tkinter import filedialog as _filedialog
+    from tkinter import messagebox as _messagebox
+    from PIL import Image as _Image
+    from PIL import ImageTk as _ImageTk
+
+    tk = _tk
+    filedialog = _filedialog
+    messagebox = _messagebox
+    Image = _Image
+    ImageTk = _ImageTk
+
 from src.ocr.preprocessing import preprocess_image
 from src.ocr.engine import (
     build_ocr_summary,
@@ -116,6 +143,7 @@ CONFIG = {
 # ============================================================
 
 def select_image():
+    _load_gui_dependencies()
     root = tk.Tk()
     root.withdraw()
 
@@ -1096,6 +1124,8 @@ def main():
     #
     # python3 -m app.main
 
+    _load_gui_dependencies()
+
     root = tk.Tk()
 
     FoodLabelAnalyzerGUI(
@@ -1103,7 +1133,6 @@ def main():
     )
 
     root.mainloop()
-
 
 if __name__ == "__main__":
     main()

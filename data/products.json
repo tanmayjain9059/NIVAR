@@ -17719,6 +17719,358 @@
           }
         }
       ]
+    },
+    "PROD-9792F15B6D14": {
+      "product_id": "PROD-9792F15B6D14",
+      "product_name": null,
+      "brand": null,
+      "barcode": null,
+      "manufacturer": null,
+      "created_at": "2026-09-20T17:33:30.528044",
+      "updated_at": "2026-09-20T17:33:30.596268",
+      "scans": [
+        {
+          "scan_id": "SCAN-D93C5DDE7DC7",
+          "product_id": "PROD-9792F15B6D14",
+          "image_path": "data/product_images/PROD-9792F15B6D14/SCAN-D93C5DDE7DC7.jpg",
+          "timestamp": "2026-09-20T17:33:30.591396",
+          "image_quality": {
+            "accepted": true,
+            "score": 99.1,
+            "checks": {
+              "resolution": {
+                "score": 100.0,
+                "measure": {
+                  "width": 1462,
+                  "height": 4000
+                },
+                "status": "PASS"
+              },
+              "blur": {
+                "score": 100.0,
+                "measure": 371.92,
+                "status": "PASS"
+              },
+              "brightness": {
+                "score": 95.3,
+                "measure": 109.6,
+                "status": "PASS"
+              },
+              "contrast": {
+                "score": 100.0,
+                "measure": 64.04,
+                "status": "PASS"
+              }
+            },
+            "rejection_reasons": []
+          },
+          "ocr": {
+            "engine": "paddle",
+            "line_count": 64,
+            "average_confidence": 0.9502
+          },
+          "compliance": {
+            "overall_status": "NON_COMPLIANT",
+            "checks": {
+              "manufacturer_packer_importer": {
+                "label": "Name & address of manufacturer/packer/importer",
+                "detected": true,
+                "matched_text": "Marketed By",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "Imported and Marketed By: Kellogg India Pvt. Ltd., Pl No.",
+                  "confidence": 0.8848319053649902,
+                  "bbox": {
+                    "x1": 488,
+                    "y1": 2793,
+                    "x2": 1778,
+                    "y2": 2952
+                  }
+                }
+              },
+              "net_quantity": {
+                "label": "Net quantity (weight/volume/number)",
+                "detected": true,
+                "matched_text": "Net Weight",
+                "status": "REVIEW",
+                "evidence": {
+                  "text": "Net Weight",
+                  "confidence": 0.9998960494995117,
+                  "bbox": {
+                    "x1": 1310,
+                    "y1": 3540,
+                    "x2": 1732,
+                    "y2": 3724
+                  }
+                },
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "manufacture_date": {
+                "label": "Month & year of manufacture/packing",
+                "detected": false,
+                "matched_text": null,
+                "status": "NOT_FOUND"
+              },
+              "mrp": {
+                "label": "Retail Sale Price (MRP), inclusive of taxes",
+                "detected": true,
+                "matched_text": "MRP ",
+                "status": "REVIEW",
+                "evidence": {
+                  "text": "MRP (incl. of all taxe)",
+                  "confidence": 0.7521982789039612,
+                  "bbox": {
+                    "x1": 942,
+                    "y1": 3708,
+                    "x2": 1982,
+                    "y2": 4056
+                  }
+                },
+                "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+              },
+              "consumer_care": {
+                "label": "Consumer care details (contact for complaints)",
+                "detected": true,
+                "matched_text": "1800-22-3500",
+                "status": "FOUND",
+                "evidence": {
+                  "text": "Or cal:1800-22-3500",
+                  "confidence": 0.900566816329956,
+                  "bbox": {
+                    "x1": 428,
+                    "y1": 4508,
+                    "x2": 1407,
+                    "y2": 4832
+                  }
+                }
+              },
+              "country_of_origin": {
+                "label": "Country of origin (mandatory only for imported goods)",
+                "detected": true,
+                "matched_text": "COUNTRY OF ORIGIN - THAILAND\nManuactured",
+                "conditional": true,
+                "status": "FOUND",
+                "evidence": {
+                  "text": "COUNTRY OF ORIGIN - THAILAND",
+                  "confidence": 0.9989675879478455,
+                  "bbox": {
+                    "x1": 495,
+                    "y1": 2468,
+                    "x2": 1310,
+                    "y2": 2592
+                  }
+                }
+              },
+              "generic_name": {
+                "label": "Generic/common name of the commodity",
+                "detected": null,
+                "matched_text": null,
+                "status": "REVIEW",
+                "note": "Requires product-name/semantic extraction and manual verification."
+              }
+            },
+            "mandatory_declarations_detected": 2,
+            "mandatory_declarations_total": 5,
+            "mandatory_declarations_review": 2,
+            "mandatory_declarations_missing": 1,
+            "disclaimer": "Automated OCR-based first-pass check. NOT DETECTED does not confirm absence on the physical package. Verify manually before making any compliance claim."
+          },
+          "analysis": {
+            "source_image": "/var/folders/76/6my05t9j6x796330fv5xlqn80000gp/T/tmphyk10s32.jpg",
+            "ocr": {
+              "engine": "paddle",
+              "line_count": 64,
+              "average_confidence": 0.9502
+            },
+            "legal_metrology_compliance": {
+              "overall_status": "NON_COMPLIANT",
+              "checks": {
+                "manufacturer_packer_importer": {
+                  "label": "Name & address of manufacturer/packer/importer",
+                  "detected": true,
+                  "matched_text": "Marketed By",
+                  "status": "FOUND",
+                  "evidence": {
+                    "text": "Imported and Marketed By: Kellogg India Pvt. Ltd., Pl No.",
+                    "confidence": 0.8848319053649902,
+                    "bbox": {
+                      "x1": 488,
+                      "y1": 2793,
+                      "x2": 1778,
+                      "y2": 2952
+                    }
+                  }
+                },
+                "net_quantity": {
+                  "label": "Net quantity (weight/volume/number)",
+                  "detected": true,
+                  "matched_text": "Net Weight",
+                  "status": "REVIEW",
+                  "evidence": {
+                    "text": "Net Weight",
+                    "confidence": 0.9998960494995117,
+                    "bbox": {
+                      "x1": 1310,
+                      "y1": 3540,
+                      "x2": 1732,
+                      "y2": 3724
+                    }
+                  },
+                  "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+                },
+                "manufacture_date": {
+                  "label": "Month & year of manufacture/packing",
+                  "detected": false,
+                  "matched_text": null,
+                  "status": "NOT_FOUND"
+                },
+                "mrp": {
+                  "label": "Retail Sale Price (MRP), inclusive of taxes",
+                  "detected": true,
+                  "matched_text": "MRP ",
+                  "status": "REVIEW",
+                  "evidence": {
+                    "text": "MRP (incl. of all taxe)",
+                    "confidence": 0.7521982789039612,
+                    "bbox": {
+                      "x1": 942,
+                      "y1": 3708,
+                      "x2": 1982,
+                      "y2": 4056
+                    }
+                  },
+                  "note": "Declaration label detected, but the required value was not detected. Manual verification required."
+                },
+                "consumer_care": {
+                  "label": "Consumer care details (contact for complaints)",
+                  "detected": true,
+                  "matched_text": "1800-22-3500",
+                  "status": "FOUND",
+                  "evidence": {
+                    "text": "Or cal:1800-22-3500",
+                    "confidence": 0.900566816329956,
+                    "bbox": {
+                      "x1": 428,
+                      "y1": 4508,
+                      "x2": 1407,
+                      "y2": 4832
+                    }
+                  }
+                },
+                "country_of_origin": {
+                  "label": "Country of origin (mandatory only for imported goods)",
+                  "detected": true,
+                  "matched_text": "COUNTRY OF ORIGIN - THAILAND\nManuactured",
+                  "conditional": true,
+                  "status": "FOUND",
+                  "evidence": {
+                    "text": "COUNTRY OF ORIGIN - THAILAND",
+                    "confidence": 0.9989675879478455,
+                    "bbox": {
+                      "x1": 495,
+                      "y1": 2468,
+                      "x2": 1310,
+                      "y2": 2592
+                    }
+                  }
+                },
+                "generic_name": {
+                  "label": "Generic/common name of the commodity",
+                  "detected": null,
+                  "matched_text": null,
+                  "status": "REVIEW",
+                  "note": "Requires product-name/semantic extraction and manual verification."
+                }
+              },
+              "mandatory_declarations_detected": 2,
+              "mandatory_declarations_total": 5,
+              "mandatory_declarations_review": 2,
+              "mandatory_declarations_missing": 1,
+              "disclaimer": "Automated OCR-based first-pass check. NOT DETECTED does not confirm absence on the physical package. Verify manually before making any compliance claim."
+            },
+            "brand": null,
+            "product_name": null,
+            "ingredients": [
+              "POTATO SOUTH AFRI % RDA* per serve (25 g) Ingredients.Dree 7% Corn Flour Se 11% Sugar Flavom 17% Vegetable Pow 5% Chilli Pepper Flavour Enhare (INS 341 2% Garlic, Paprikal Emulsifier 7% Acidity Reguit Contains wheat"
+            ],
+            "allergens": {
+              "contains": [],
+              "may_contain": []
+            },
+            "nutrition": {
+              "Total Sugars": {
+                "value": 2.0,
+                "unit": "g"
+              },
+              "Added Sugars": {
+                "value": 1.0,
+                "unit": "g"
+              },
+              "Cholesterol": {
+                "value": 0.0,
+                "unit": "mg"
+              },
+              "Total Fat": {
+                "value": 28.5,
+                "unit": "g"
+              },
+              "Protein": {
+                "value": 5.2,
+                "unit": "g"
+              },
+              "Energy": {
+                "value": 522.0,
+                "unit": "kcal"
+              },
+              "Sodium": {
+                "value": 592.0,
+                "unit": "mg"
+              }
+            },
+            "quantity": null,
+            "manufacturer": null,
+            "manufacturing_date": null,
+            "expiry_date": null,
+            "meta": {
+              "nutrition_fields_found": 7,
+              "nutrition_fields_total": 11,
+              "ingredients_found": 1,
+              "confirmed_allergens": 0,
+              "possible_allergens": 0
+            },
+            "image_quality": {
+              "accepted": true,
+              "score": 99.1,
+              "checks": {
+                "resolution": {
+                  "score": 100.0,
+                  "measure": {
+                    "width": 1462,
+                    "height": 4000
+                  },
+                  "status": "PASS"
+                },
+                "blur": {
+                  "score": 100.0,
+                  "measure": 371.92,
+                  "status": "PASS"
+                },
+                "brightness": {
+                  "score": 95.3,
+                  "measure": 109.6,
+                  "status": "PASS"
+                },
+                "contrast": {
+                  "score": 100.0,
+                  "measure": 64.04,
+                  "status": "PASS"
+                }
+              },
+              "rejection_reasons": []
+            }
+          }
+        }
+      ]
     }
   }
 }
