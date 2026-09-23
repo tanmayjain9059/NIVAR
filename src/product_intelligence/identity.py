@@ -1,62 +1,67 @@
-"""Product and brand identity extraction for packaged-food labels."""
+"""Evidence-based product identity extraction for packaged-food labels."""
 
 import re
 from typing import Any
 
 PRODUCT_LABEL_RE = re.compile(
-    r"\b(?:product\s*name|name\s*of\s*product|name\s*of\s*food)\b\s*[:\-]?\s*(.+)",
+    r"\b(?:product\s+name|name\s+of\s+(?:the\s+)?(?:product|food))\b"
+    r"\s*[:\-]?\s*(.+)",
     re.I,
 )
-BRAND_LABEL_RE = re.compile(r"\bbrand\b\s*[:\-]?\s*(.+)", re.I)
+
+BRAND_LABEL_RE = re.compile(
+    r"\bbrand\b\s*[:\-]?\s*(.+)",
+    re.I,
+)
+
 MANUFACTURER_RE = re.compile(
-    r"\b(?:manufactured|marketed|packed|imported)\s+by\b\s*[:\-]?\s*(.+)",
+    r"\b(?:manufactured|marketed|packed|imported)\s+by\b"
+    r"\s*[:\-]?\s*(.+)",
     re.I,
 )
 
 NOISE_RE = re.compile(
-    r"\b(?:mrp|m\.r\.p|net\s*(?:qty|quantity|weight)|ingredients?|nutrition(?:al)?|"
-    r"energy|protein|carbohydrate|sugars?|fat|fiber|sodium|cholesterol|saturated|"
-    r"trans\s*fat|batch|lot|pkd|mfd|mfg|barcode|use\s*by|best\s*before|expiry|"
-    r"country\s+of\s+origin|contains|may\s+contain|keep\s+in|store\s+in|"
-    r"directions|warning|license|licence|fssai|customer\s+care|consumer\s+care|"
+    r"\b(?:mrp|m\.r\.p|net\s*(?:qty|quantity|weight)|ingredients?|"
+    r"nutrition(?:al)?|energy|protein|carbohydrate|sugars?|fat|fiber|"
+    r"sodium|cholesterol|saturated|trans\s*fat|batch|lot|pkd|mfd|mfg|"
+    r"barcode|use\s*by|best\s*before|expiry|country\s+of\s+origin|"
+    r"contains|may\s+contain|keep\s+in|store\s+in|directions|warning|"
+    r"license|licence|fssai|customer\s+care|consumer\s+care|"
     r"manufactured|packed|marketed|imported|www\.|@)\b",
     re.I,
 )
 
-NUTRITION_RE = re.compile(
-    r"\b(?:nutrition|nutritional|energy|protein|carbohydrate|sugar|fat|fiber|"
-    r"sodium|cholesterol|kcal|rda)\b",
-    re.I,
-)
-
 COMPANY_RE = re.compile(
-    r"\b(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|llp|inc\.?|"
-    r"incorporated|corp\.?|corporation|co\.?|company|industries|foods|"
+    r"\b(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|llp|"
+    r"inc\.?|incorporated|corp\.?|corporation|company|industries|"
     r"food\s+products|enterprises|traders|manufacturers?)\b",
     re.I,
 )
 
 ADDRESS_RE = re.compile(
-    r"\b(?:plot|road|street|lane|avenue|industrial\s+area|estate|sector|block|"
-    r"district|taluka|tehsil|village|nagar|colony|pin(?:code)?|postcode|zip|"
-    r"near|opposite|opp\.?|phase|highway|city|state)\b",
+    r"\b(?:plot|road|street|lane|avenue|industrial\s+area|estate|"
+    r"sector|block|district|taluka|tehsil|village|nagar|colony|"
+    r"pin(?:code)?|postcode|zip|near|opposite|opp\.?|phase|highway|"
+    r"city|state)\b",
     re.I,
 )
 
-FOOD_TYPE_RE = re.compile(
-    r"\b(?:rice|basmati|flour|atta|maida|suji|sooji|dal|lentil|pulses?|wheat|"
-    r"oats?|poha|flattened\s+rice|noodles?|pasta|biscuit(?:s)?|cookies?|bread|"
-    r"rusk|namkeen|snack(?:s)?|chips?|mixture|cereal(?:s)?|corn(?:flakes)?|"
-    r"muesli|chocolate|cocoa|tea|coffee|juice|drink|beverage|milk|curd|yogurt|"
-    r"ghee|butter|cheese|oil|pickle|jam|sauce|ketchup|spice(?:s)?|masala|salt|"
-    r"sugar|honey|jaggery|vermicelli|semolina|gram|chana|rajma|peas?|nuts?|"
-    r"almonds?|cashews?|seasoning|powder|mix|blend|paste)\b",
+FOOD_WORDS = re.compile(
+    r"\b(?:rice|basmati|flour|atta|maida|suji|sooji|dal|lentil|pulses?|"
+    r"wheat|oats?|poha|flattened\s+rice|noodles?|pasta|biscuit(?:s)?|"
+    r"cookies?|bread|rusk|namkeen|snack(?:s)?|chips?|mixture|cereal(?:s)?|"
+    r"corn(?:flakes)?|muesli|chocolate|cocoa|tea|coffee|juice|drink|"
+    r"beverage|milk|curd|yogurt|ghee|butter|cheese|oil|pickle|jam|sauce|"
+    r"ketchup|spice(?:s)?|masala|salt|sugar|honey|jaggery|vermicelli|"
+    r"semolina|gram|chana|rajma|peas?|nuts?|almonds?|cashews?|seasoning|"
+    r"powder|mix|blend|paste)\b",
     re.I,
 )
 
 MARKETING_RE = re.compile(
-    r"\b(?:everyone|gathered|moments|warmth|finest|first\s+bite|last\s+crumb|"
-    r"heaven|sharing|loved\s+ones|discover|range|baked|buttery|meant\s+for)\b",
+    r"\b(?:everyone|gathered|moments|warmth|finest|first\s+bite|"
+    r"last\s+crumb|heaven|sharing|loved\s+ones|discover|range|baked|"
+    r"buttery|meant\s+for)\b",
     re.I,
 )
 
@@ -70,8 +75,10 @@ def _confidence(value: Any) -> float:
         value = float(value)
     except (TypeError, ValueError):
         return 0.0
+
     if value > 1:
         value /= 100
+
     return max(0.0, min(value, 1.0))
 
 
@@ -89,8 +96,10 @@ def _bbox(row):
 
 def _evidence(row, text=None):
     box = _bbox(row)
+
     if box is None:
         return None
+
     return {
         "text": _clean(text if text is not None else row.get("text")),
         "confidence": _confidence(row.get("conf", 0)),
@@ -100,248 +109,294 @@ def _evidence(row, text=None):
 
 def _valid_candidate(text: str) -> bool:
     text = _clean(text)
-    if not 2 <= len(text) <= 80:
+
+    if not 2 <= len(text) <= 100:
         return False
+
     if re.fullmatch(r"[\d\s./:%₹$€£+\-]+", text):
         return False
+
     if NOISE_RE.search(text):
         return False
+
     if COMPANY_RE.search(text) or ADDRESS_RE.search(text):
         return False
+
     if sum(c.isalpha() for c in text) < 2:
         return False
-    if len(text.split()) > 8:
-        return False
-    return True
+
+    return len(text.split()) <= 10
 
 
-def _clean_candidate(value: str) -> str:
-    value = _clean(value)
-    value = re.split(
-        r"\b(?:mrp|net\s*(?:qty|quantity)|ingredients?|nutrition|contains|"
-        r"may\s+contain|manufactured\s+by|marketed\s+by|packed\s+by|"
-        r"customer\s+care)\b",
-        value,
-        maxsplit=1,
-        flags=re.I,
-    )[0]
-    return value.strip(" :-.,;")
+def _score(
+    text: str,
+    confidence: float,
+    *,
+    front: bool,
+    source: str,
+) -> float:
+    value = _clean(text)
+    score = confidence * 100
 
-
-def _candidate_score(value: str, confidence: float = 0.5, front=False) -> float:
-    score = confidence * 50
-    words = len(value.split())
-
-    if FOOD_TYPE_RE.search(value):
-        score += 40
+    if FOOD_WORDS.search(value):
+        score += 55
     else:
-        return -999
+        # Product names can be coined names, so absence of a food vocabulary
+        # match is not a rejection.
+        score += 5
 
-    if 2 <= words <= 5:
+    word_count = len(value.split())
+    if 1 <= word_count <= 5:
         score += 12
-    elif words > 6:
-        score -= 12
+    elif word_count > 8:
+        score -= 20
 
-    if 4 <= len(value) <= 55:
+    if 4 <= len(value) <= 60:
         score += 5
 
     if front:
-        score += 15
+        score += 35
+
+    if source == "explicit_product_label":
+        score += 80
 
     if MARKETING_RE.search(value):
-        score -= 35
-
-    if NUTRITION_RE.search(value):
         score -= 60
 
-    if any(ch in value for ch in ".!?"):
+    if "!" in value or "?" in value:
         score -= 25
 
     return score
+
+
+def _candidate(
+    value: str,
+    row=None,
+    *,
+    confidence: float | None = None,
+    source: str,
+    front: bool,
+) -> dict[str, Any] | None:
+    value = _clean(value)
+
+    if not _valid_candidate(value):
+        return None
+
+    if confidence is None:
+        confidence = (
+            _confidence(row.get("conf", 0))
+            if row is not None
+            else 0.5
+        )
+
+    evidence = _evidence(row, value) if row is not None else None
+
+    return {
+        "value": value,
+        "confidence": confidence,
+        "score": round(
+            _score(
+                value,
+                confidence,
+                front=front,
+                source=source,
+            ),
+            3,
+        ),
+        "evidence": evidence,
+        "source": source,
+    }
+
+
+def _rows(ocr_data):
+    if ocr_data is None or getattr(ocr_data, "empty", True):
+        return []
+
+    rows = []
+
+    for _, row in ocr_data.iterrows():
+        text = _clean(row.get("text"))
+
+        if text:
+            rows.append(row)
+
+    return rows
 
 
 def _explicit_candidates(ocr_data):
     products = []
     brands = []
 
-    if ocr_data is None or getattr(ocr_data, "empty", True):
-        return products, brands
-
-    for _, row in ocr_data.iterrows():
+    for row in _rows(ocr_data):
         text = _clean(row.get("text"))
-        if not text:
-            continue
+        confidence = _confidence(row.get("conf", 0))
 
         match = PRODUCT_LABEL_RE.search(text)
         if match:
-            value = _clean_candidate(match.group(1))
-            if _valid_candidate(value):
-                evidence = _evidence(row, text)
-                if evidence:
-                    products.append({
-                        "value": value,
-                        "confidence": evidence["confidence"],
-                        "score": evidence["confidence"] * 100 + 100,
-                        "evidence": evidence,
-                        "source": "explicit_product_label",
-                    })
+            candidate = _candidate(
+                match.group(1),
+                row,
+                confidence=confidence,
+                source="explicit_product_label",
+                front=True,
+            )
+            if candidate:
+                products.append(candidate)
 
         match = BRAND_LABEL_RE.search(text)
         if match:
-            value = _clean_candidate(match.group(1))
-            if _valid_candidate(value):
-                evidence = _evidence(row, text)
-                if evidence:
-                    brands.append({
-                        "value": value,
-                        "confidence": evidence["confidence"],
-                        "evidence": evidence,
-                        "source": "explicit_brand_label",
-                    })
+            candidate = _candidate(
+                match.group(1),
+                row,
+                confidence=confidence,
+                source="explicit_brand_label",
+                front=True,
+            )
+            if candidate:
+                brands.append(candidate)
 
         match = MANUFACTURER_RE.search(text)
         if match:
-            value = _clean_candidate(match.group(1))
-            if _valid_candidate(value):
-                evidence = _evidence(row, text)
-                if evidence:
-                    brands.append({
-                        "value": value,
-                        "confidence": min(evidence["confidence"], 0.9),
-                        "evidence": evidence,
-                        "source": "manufacturer_label",
-                    })
+            candidate = _candidate(
+                match.group(1),
+                row,
+                confidence=min(confidence, 0.9),
+                source="manufacturer_entity",
+                front=False,
+            )
+            if candidate:
+                brands.append(candidate)
 
     return products, brands
 
 
 def _front_candidates(ocr_data):
-    if ocr_data is None or getattr(ocr_data, "empty", True):
+    rows = _rows(ocr_data)
+
+    if not rows:
         return []
 
     try:
-        image_height = max(float(ocr_data["bottom"].max()), 1.0)
-    except (KeyError, TypeError, ValueError):
-        return []
-
-    rows = []
-    for _, row in ocr_data.iterrows():
-        text = _clean(row.get("text"))
-        if not text or not _valid_candidate(text):
-            continue
-
-        try:
-            top = float(row["top"])
-            confidence = _confidence(row.get("conf", 0))
-        except (KeyError, TypeError, ValueError):
-            continue
-
-        if top / image_height > 0.55:
-            continue
-
-        score = _candidate_score(
-            text,
-            confidence,
-            front=top / image_height < 0.40,
+        image_height = max(
+            float(ocr_data["bottom"].max()),
+            1.0,
         )
-
-        if score < 35:
-            continue
-
-        evidence = _evidence(row)
-        if evidence:
-            rows.append({
-                "value": text,
-                "score": round(score, 3),
-                "confidence": confidence,
-                "evidence": evidence,
-                "source": "front_panel_candidate",
-                "row": row,
-            })
-
-    return rows
-
-
-def _joined_candidates(ocr_data):
-    if ocr_data is None or getattr(ocr_data, "empty", True):
-        return []
-
-    rows = []
-    try:
-        image_height = max(float(ocr_data["bottom"].max()), 1.0)
     except (KeyError, TypeError, ValueError):
         return []
-
-    for _, row in ocr_data.iterrows():
-        text = _clean(row.get("text"))
-        if not text:
-            continue
-        try:
-            rows.append({
-                "text": text,
-                "left": float(row["left"]),
-                "top": float(row["top"]),
-                "right": float(row["right"]),
-                "bottom": float(row["bottom"]),
-                "confidence": _confidence(row.get("conf", 0)),
-                "row": row,
-            })
-        except (KeyError, TypeError, ValueError):
-            continue
-
-    rows = [
-        row for row in rows
-        if row["top"] / image_height < 0.55
-        and _valid_candidate(row["text"])
-    ]
 
     candidates = []
 
-    for left in rows:
-        for right in rows:
-            if right is left:
-                continue
-            if right["left"] < left["left"]:
+    for row in rows:
+        text = _clean(row.get("text"))
+
+        try:
+            ratio = float(row["top"]) / image_height
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        if ratio > 0.48:
+            continue
+
+        candidate = _candidate(
+            text,
+            row,
+            source="front_panel_ocr",
+            front=ratio < 0.35,
+        )
+
+        if candidate:
+            candidates.append(candidate)
+
+    return candidates
+
+
+def _joined_front_candidates(ocr_data):
+    rows = _rows(ocr_data)
+
+    if not rows:
+        return []
+
+    try:
+        image_height = max(
+            float(ocr_data["bottom"].max()),
+            1.0,
+        )
+    except (KeyError, TypeError, ValueError):
+        return []
+
+    ordered = []
+
+    for row in rows:
+        try:
+            top = float(row["top"])
+            bottom = float(row["bottom"])
+            left = float(row["left"])
+            right = float(row["right"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        if top / image_height > 0.48:
+            continue
+
+        ordered.append(
+            {
+                "row": row,
+                "top": top,
+                "bottom": bottom,
+                "left": left,
+                "right": right,
+                "height": max(1.0, bottom - top),
+            }
+        )
+
+    ordered.sort(
+        key=lambda item: (item["top"], item["left"]),
+    )
+
+    candidates = []
+
+    for index, left in enumerate(ordered):
+        for right in ordered[index + 1:]:
+            if right["left"] < left["right"]:
                 continue
 
-            same_line = abs(
-                ((left["top"] + left["bottom"]) / 2)
-                - ((right["top"] + right["bottom"]) / 2)
-            ) <= max(
-                left["bottom"] - left["top"],
-                right["bottom"] - right["top"],
-                20,
+            left_center = (left["top"] + left["bottom"]) / 2
+            right_center = (right["top"] + right["bottom"]) / 2
+
+            if abs(left_center - right_center) > max(
+                0.7 * max(left["height"], right["height"]),
+                24,
+            ):
+                if right["top"] - left["top"] > max(
+                    0.7 * max(left["height"], right["height"]),
+                    24,
+                ):
+                    break
+                continue
+
+            gap = right["left"] - left["right"]
+
+            if gap > 5 * max(left["height"], 20):
+                continue
+
+            value = _clean(
+                f'{left["row"].get("text", "")} '
+                f'{right["row"].get("text", "")}',
             )
 
-            close = right["left"] - left["right"] <= 6 * max(
-                left["bottom"] - left["top"], 20
-            )
-
-            if not same_line or not close:
-                continue
-
-            value = _clean(f'{left["text"]} {right["text"]}')
-            if not _valid_candidate(value):
-                continue
-
-            score = _candidate_score(
+            candidate = _candidate(
                 value,
-                min(left["confidence"], right["confidence"]),
+                left["row"],
+                confidence=min(
+                    _confidence(left["row"].get("conf", 0)),
+                    _confidence(right["row"].get("conf", 0)),
+                ),
+                source="joined_front_panel_ocr",
                 front=True,
             )
 
-            if score < 50:
-                continue
-
-            evidence = _evidence(left["row"], value)
-            if evidence:
-                candidates.append({
-                    "value": value,
-                    "score": round(score + 10, 3),
-                    "confidence": min(left["confidence"], right["confidence"]),
-                    "evidence": evidence,
-                    "source": "joined_front_panel_candidate",
-                })
+            if candidate:
+                candidates.append(candidate)
 
     return candidates
 
@@ -350,43 +405,60 @@ def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
     explicit_products, explicit_brands = _explicit_candidates(ocr_data)
 
     if explicit_products:
-        selected = max(explicit_products, key=lambda item: item["score"])
+        product_candidates = explicit_products
     else:
-        candidates = _front_candidates(ocr_data) + _joined_candidates(ocr_data)
+        product_candidates = (
+            _front_candidates(ocr_data)
+            + _joined_front_candidates(ocr_data)
+        )
 
-        # Ordered global OCR is a fallback only. It helps when OCR text is
-        # readable but the detector's boxes are fragmented or incomplete.
-        for index, line in enumerate(str(raw_text or "").splitlines()):
-            value = _clean_candidate(line)
-            if not _valid_candidate(value):
-                continue
-            score = _candidate_score(value, 0.5, front=index < 10)
-            if score >= 35:
-                candidates.append({
-                    "value": value,
-                    "score": round(score, 3),
-                    "confidence": 0.5,
-                    "evidence": None,
-                    "source": "global_ocr_candidate",
-                })
+        # Global OCR is a final recall source. It is intentionally penalized
+        # so that it cannot outrank spatial front-panel evidence.
+        for line in str(raw_text or "").splitlines():
+            candidate = _candidate(
+                line,
+                source="global_ocr_fallback",
+                front=False,
+                confidence=0.5,
+            )
 
-        selected = max(candidates, key=lambda item: item["score"]) if candidates else None
+            if candidate:
+                candidate["score"] -= 20
+                product_candidates.append(candidate)
 
-    brand = max(explicit_brands, key=lambda item: item["confidence"]) if explicit_brands else None
+    selected = (
+        max(product_candidates, key=lambda item: item["score"])
+        if product_candidates
+        else None
+    )
 
-    output_candidates = sorted(
-        [dict(item, row=None) for item in (explicit_products + (_front_candidates(ocr_data) if not explicit_products else []))],
+    brand = (
+        max(explicit_brands, key=lambda item: item["confidence"])
+        if explicit_brands
+        else None
+    )
+
+    candidates = sorted(
+        [dict(item) for item in product_candidates],
         key=lambda item: item["score"],
         reverse=True,
-    )
+    )[:12]
 
     return {
         "product_name": selected["value"] if selected else None,
-        "product_name_confidence": selected["confidence"] if selected else None,
-        "product_name_evidence": selected["evidence"] if selected else None,
+        "product_name_confidence": (
+            selected["confidence"] if selected else None
+        ),
+        "product_name_evidence": (
+            selected["evidence"] if selected else None
+        ),
         "brand": brand["value"] if brand else None,
-        "brand_confidence": brand["confidence"] if brand else None,
-        "brand_evidence": brand["evidence"] if brand else None,
-        "product_name_candidates": output_candidates[:10],
+        "brand_confidence": (
+            brand["confidence"] if brand else None
+        ),
+        "brand_evidence": (
+            brand["evidence"] if brand else None
+        ),
+        "product_name_candidates": candidates,
         "brand_candidates": explicit_brands[:5],
     }
