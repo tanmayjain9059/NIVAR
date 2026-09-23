@@ -76,7 +76,9 @@ def parse_allergens(text: str) -> tuple[list[str], list[str]]:
 
     for match in _DECL.finditer(normalized):
         kind = match.group(1).lower()
-        value = match.group(2)
+        # Capture the declaration up to sentence punctuation. Keep commas,
+        # ampersands, slashes and OCR noise inside the declaration intact.
+        value = match.group(2).strip()
 
         stop = _STOP.search(value)
         if stop:
