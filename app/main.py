@@ -731,6 +731,17 @@ def process_image(file_path, config=CONFIG):
         product_identity
     )
 
+    # Promote high-confidence core declaration evidence into the product
+    # information fields shown by the UI.
+    checks = compliance_report.get("checks", {})
+    def _matched(key):
+        item = checks.get(key, {})
+        return item.get("matched_text") if item.get("status") in {"FOUND", "REVIEW"} else None
+
+    structured_result["quantity"] = _matched("net_quantity")
+    structured_result["manufacturer"] = _matched("manufacturer_packer_importer")
+    structured_result["manufacturing_date"] = _matched("manufacture_date")
+
     structured_result["product_name"] = (
         product_identity.get(
             "product_name"
