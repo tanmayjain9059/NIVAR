@@ -123,19 +123,26 @@ def _result(detected,matched_text,evidence=None,value_missing=False):
 def _manufacturer(text,ocr):
     labels=_rows(ocr)
     for row in labels:
-        if _label_match(_norm(row.get("text")),LABELS["manufacturer_packer_importer"]):
-            base=_norm(row.get("text"))
-            candidates=[base]
-            near=_nearby_values(row,ocr,lambda x: bool(re.search(r"[A-Za-z\u0900-\u0DFF]{3,}",x)))
-            for _,v in near[:3]: candidates.append(_norm(v.get("text")))
-            matched=" ".join(candidates[:3])
-            return _result(True,matched,_evidence(row,matched))
+        label_text=_norm(row.get("text"))
+        if _label_match(label_text,LABELS["manufacturer_packer_importer"]):
+            near=_nearby_values(
+                row,
+                ocr,
+                lambda x: bool(re.search(r"[A-Za-z\u0900-\u0DFF]{3,}",x))
+                and not _label_match(x,LABELS["manufacturer_packer_importer"]),
+                650,
+            )
+            if near:
+                value=_norm(near[0][1].get("text"))
+                return _result(True,f"{label_text} {value}",_evidence(near[0][1]))
+            return _result(True,label_text,_evidence(row),True)
     pattern=_label_match(text,LABELS["manufacturer_packer_importer"])
     if pattern:
         after=text[pattern.end():].strip(" :-")
         lines=[x.strip() for x in re.split(r"\n+",after) if x.strip()]
-        value=lines[0] if lines else pattern.group(0)
-        return _result(bool(lines),f"{pattern.group(0)} {value}".strip(),None,not bool(lines))
+        if lines:
+            return _result(True,f"{pattern.group(0)} {lines[0]}")
+        return _result(True,pattern.group(0),None,True)
     return _result(False,None)
 
 def _net_quantity(text,ocr):
