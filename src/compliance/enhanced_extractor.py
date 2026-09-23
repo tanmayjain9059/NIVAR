@@ -19,7 +19,7 @@ LABELS = {
         r"প্রস্তুতকারক", r"উৎপাদিত", r"ઉત્પાદક", r"ਨਿਰਮਾਤਾ", r"ନିର୍ମାତା",
     ],
     "net_quantity": [
-        r"net\s+(?:weight|quantity|qty)", r"n\.?\s*qty",
+        r"net\s*(?:weight|quantity|qty|wt|wgt)", r"n\.?\s*qty",
         r"नेट\s*(?:मात्रा|वजन)", r"शुद्ध\s*(?:मात्रा|वजन)",
         r"నికర\s*(?:పరిమాణం|బరువు)", r"நிகர\s*(?:அளவு|எடை)",
         r"ನಿವ್ವಳ\s*(?:ಪ್ರಮಾಣ|ತೂಕ)", r"ശുദ്ധ\s*(?:അളവ്|ഭാരം)",
@@ -79,6 +79,18 @@ def _evidence(row,text=None):
                         "x2":int(row["right"]),"y2":int(row["bottom"])}}
     except (KeyError,TypeError,ValueError): return None
 
+def _ocr_text(ocr_data):
+    """Build a spatially ordered fallback text stream from OCR boxes."""
+    rows = _rows(ocr_data)
+    if not rows:
+        return ""
+    try:
+        rows = sorted(rows, key=lambda r: (float(r.get("top", 0)), float(r.get("left", 0))))
+    except (TypeError, ValueError):
+        pass
+    return "\n".join(_norm(r.get("text")) for r in rows if _norm(r.get("text")))
+
+
 def _rows(ocr_data):
     if ocr_data is None or getattr(ocr_data,"empty",True): return []
     rows=[]
@@ -87,10 +99,15 @@ def _rows(ocr_data):
         if text: rows.append(row)
     return rows
 
+def _search_text(raw_text, ocr_data):
+    parts = [str(raw_text or "").strip(), _ocr_text(ocr_data)]
+    return "\n".join(part for part in parts if part)
+
+
 def _label_match(text,patterns):
     return next((re.search(p,text,re.I) for p in patterns if re.search(p,text,re.I)),None)
 
-def _nearby_values(label_row,ocr_data,predicate,max_gap=500):
+def _nearby_values(label_row,ocr_data,predicate,max_gap=1500):
     try:
         lx,ly,lr,lb=map(float,(label_row["left"],label_row["top"],label_row["right"],label_row["bottom"]))
     except (KeyError,TypeError,ValueError): return []
@@ -243,7 +260,7 @@ def _net_quantity(text,ocr):
         if m:return _result(True,m.group(0))
     for row in _rows(ocr):
         if _label_match(_norm(row.get("text")),LABELS["net_quantity"]):
-            near=_nearby_values(row,ocr,lambda x:bool(QUANTITY_RE.fullmatch(x)),500)
+            near=_nearby_values(row,ocr,lambda x:bool(QUANTITY_RE.search(x)),1500)
             if near:return _result(True,f"{row.get('text')} {near[0][1].get('text')}",_evidence(near[0][1]))
     return _result(bool(pattern),pattern.group(0) if pattern else None,None, bool(pattern))
 
@@ -251,7 +268,7 @@ def _manufacture_date(text,ocr):
     for row in _rows(ocr):
         label=_norm(row.get("text"))
         if _label_match(label,LABELS["manufacture_date"]) and not re.search(r"best\s*before|expiry|use\s*by",label,re.I):
-            near=_nearby_values(row,ocr,lambda x:bool(DATE_RE.fullmatch(x)),500)
+            near=_nearby_values(row,ocr,lambda x:bool(DATE_RE.search(x)),1500)
             if near:return _result(True,f"{label} {near[0][1].get('text')}",_evidence(near[0][1]))
     pattern=_label_match(text,LABELS["manufacture_date"])
     if pattern:
@@ -270,7 +287,7 @@ def _mrp(text,ocr):
     for row in _rows(ocr):
         label=_norm(row.get("text"))
         if _label_match(label,LABELS["mrp"]):
-            near=_nearby_values(row,ocr,lambda x:bool(re.fullmatch(r"(?:₹|rs\.?|inr)?\s*\d{1,5}(?:\.\d{1,2})?",x,re.I)),700)
+            near=_nearby_values(row,ocr,lambda x:bool(re.fullmatch(r"(?:₹|rs\.?|inr)?\s*\d{1,5}(?:\.\d{1,2})?",x,re.I)),1500)
             if near:return _result(True,f"{label} {near[0][1].get('text')}",_evidence(near[0][1]))
     pattern=_label_match(text,LABELS["mrp"])
     return _result(bool(pattern),pattern.group(0) if pattern else None,None,bool(pattern))
@@ -284,14 +301,14 @@ def _consumer(text,ocr):
     for row in _rows(ocr):
         label=_norm(row.get("text"))
         if _label_match(label,LABELS["consumer_care"]):
-            near=_nearby_values(row,ocr,lambda x:bool(EMAIL_RE.search(x) or PHONE_RE.search(x)),800)
+            near=_nearby_values(row,ocr,lambda x:bool(EMAIL_RE.search(x) or PHONE_RE.search(x)),1500)
             if near:return _result(True,f"{label} {near[0][1].get('text')}",_evidence(near[0][1]))
     email=EMAIL_RE.search(text); phone=PHONE_RE.search(text)
     if email or phone:return _result(True,(email or phone).group(0))
     return _result(bool(pattern),pattern.group(0) if pattern else None,None,bool(pattern))
 
 def extract_declarations(raw_text,compliance_text=None,ocr_data=None):
-    text=f"{compliance_text or ''}\n{raw_text or ''}"
+    text=_search_text(f"{compliance_text or ''}\n{raw_text or ''}", ocr_data)
     return {
         "manufacturer_packer_importer":_manufacturer(text,ocr_data),
         "net_quantity":_net_quantity(text,ocr_data),
