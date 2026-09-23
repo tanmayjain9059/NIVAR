@@ -67,3 +67,18 @@ def test_multi_image_fusion_does_not_drop_food_fields():
     assert result["nutrition"]["Energy"]["value"] == 400
     assert result["nutrition"]["Protein"]["value"] == 8
     assert len(result["images"]) == 2
+
+
+def test_manufacturer_selection_prefers_company_name_over_address():
+    from src.compliance.enhanced_extractor import extract_declarations
+
+    text = (
+        "Manufactured by\n"
+        "ABC Foods Pvt Ltd\n"
+        "Plot 12, Industrial Area, Hyderabad - 500001\n"
+        "Consumer Care 1800 123 4567"
+    )
+    result = extract_declarations(text)
+    value = result["manufacturer_packer_importer"]["matched_text"]
+    assert "ABC Foods Pvt Ltd" in value
+    assert "Industrial Area" not in value
