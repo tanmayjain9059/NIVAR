@@ -1,632 +1,286 @@
 """
-Product identity extraction.
+Robust product/brand identity extraction from OCR.
 
-This module identifies likely product name and brand candidates
-from OCR text and OCR geometry.
-
-The implementation is deterministic and preserves evidence
-for every selected identity value.
+The extractor prefers explicit semantic labels, then falls back to
+high-confidence layout candidates. It deliberately rejects common
+nutrition, compliance, contact, address, and metadata text.
 """
 
 import re
 from typing import Any
 
 
-BRAND_LABEL_PATTERN = re.compile(
-    r"\b(?:brand|manufactured\s+by|marketed\s+by)\b",
-    re.IGNORECASE,
-)
-
-
-PRODUCT_LABEL_PATTERN = re.compile(
-    r"\b(?:product\s+name|name\s+of\s+product|product)\b"
+PRODUCT_LABEL_RE = re.compile(
+    r"\b(?:product\s*name|name\s*of\s*product|product)\b"
     r"\s*[:\-]?\s*(.+)",
     re.IGNORECASE,
 )
 
+BRAND_LABEL_RE = re.compile(
+    r"\bbrand\b\s*[:\-]?\s*(.+)",
+    re.IGNORECASE,
+)
 
-NOISE_PATTERN = re.compile(
-    r"^(?:"
-    r"mrp|m\.r\.p|"
-    r"net\s*(?:qty|quantity|weight)|"
-    r"ingredients?|"
-    r"nutrition|"
-    r"manufactured|"
-    r"manufactured\s+by|"
-    r"packed\s+by|"
-    r"marketed\s+by|"
-    r"customer\s+care|"
-    r"consumer\s+care|"
-    r"batch|"
-    r"lot|"
-    r"pkd|"
-    r"mfd|"
-    r"mfg|"
-    r"use\s*by|"
-    r"best\s*before|"
-    r"barcode|"
-    r"country\s+of\s+origin"
-    r")\b",
+MANUFACTURER_BRAND_RE = re.compile(
+    r"\b(?:manufactured|marketed|packed|imported)\s+by\b"
+    r"\s*[:\-]?\s*(.+)",
+    re.IGNORECASE,
+)
+
+NOISE_RE = re.compile(
+    r"\b(?:mrp|m\.r\.p|net\s*(?:qty|quantity|weight)|"
+    r"ingredients?|nutrition(?:al)?(?:\s+information)?|"
+    r"energy|protein|carbohydrate|sugars?|fat|fiber|"
+    r"sodium|cholesterol|saturated|trans\s+fat|"
+    r"manufactured|packed|marketed|imported|"
+    r"customer\s+care|consumer\s+care|"
+    r"batch|lot|pkd|mfd|mfg|barcode|"
+    r"use\s*by|best\s*before|expiry|"
+    r"country\s+of\s+origin|contains|may\s+contain|"
+    r"keep\s+in|store\s+in|directions|warning|"
+    r"license|licence|fssai|www\.|@)\b",
+    re.IGNORECASE,
+)
+
+COMPANY_SUFFIX_RE = re.compile(
+    r"\b(?:private\s+limited|pvt\.?\s*ltd\.?|limited|ltd\.?|"
+    r"foods?|industr(?:y|ies)|corporation|corp\.?|"
+    r"enterprises?|industries|llp)\b.*$",
+    re.IGNORECASE,
+)
+
+NUTRITION_CONTEXT_RE = re.compile(
+    r"\b(?:nutrition|nutritional|energy|protein|carbohydrate|"
+    r"sugar|fat|fiber|sodium|cholesterol|kcal|rda)\b",
     re.IGNORECASE,
 )
 
 
-NUMERIC_HEAVY_PATTERN = re.compile(
-    r"^[\d\s./:%₹$€£\-]+$"
-)
+def _clean(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())
 
 
-def _clean_text(
-    value: Any,
-) -> str:
-    """
-    Normalize OCR text for identity processing.
-    """
-
-    text = str(
-        value or ""
-    ).strip()
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text,
-    )
-
-    return text
-
-
-def _normalize_confidence(
-    value: Any,
-) -> float:
-    """
-    Normalize OCR confidence to the 0.0–1.0 range.
-
-    Paddle-style confidence is typically already 0–1.
-
-    Tesseract confidence may be 0–100.
-    """
-
+def _confidence(value: Any) -> float:
     try:
-        confidence = float(value)
-    except (
-        TypeError,
-        ValueError,
-    ):
+        value = float(value)
+    except (TypeError, ValueError):
         return 0.0
-
-    if confidence < 0:
-        return 0.0
-
-    if confidence > 1.0:
-        confidence /= 100.0
-
-    return max(
-        0.0,
-        min(
-            confidence,
-            1.0,
-        ),
-    )
+    if value > 1:
+        value /= 100.0
+    return max(0.0, min(value, 1.0))
 
 
-def _looks_like_noise(
-    text: str,
-) -> bool:
-    """
-    Determine whether OCR text is unsuitable as identity text.
-    """
-
-    if not text:
-        return True
-
-    if len(text) < 2:
-        return True
-
-    if NUMERIC_HEAVY_PATTERN.fullmatch(
-        text
-    ):
-        return True
-
-    if NOISE_PATTERN.search(
-        text
-    ):
-        return True
-
-    return False
-
-
-def _bbox_area(
-    row,
-) -> float:
-    """
-    Calculate OCR bounding-box area.
-    """
-
+def _bbox(row) -> dict[str, int] | None:
     try:
-        width = max(
-            0.0,
-            float(row["right"])
-            - float(row["left"]),
-        )
-
-        height = max(
-            0.0,
-            float(row["bottom"])
-            - float(row["top"]),
-        )
-
-        return width * height
-
-    except (
-        KeyError,
-        TypeError,
-        ValueError,
-    ):
-        return 0.0
-
-
-def _candidate_score(
-    row,
-    image_width: float,
-    image_height: float,
-) -> float:
-    """
-    Score a generic OCR line as a possible product name.
-    """
-
-    text = _clean_text(
-        row.get("text")
-    )
-
-    confidence = _normalize_confidence(
-        row.get("conf", 0.0)
-    )
-
-    area = _bbox_area(
-        row
-    )
-
-    image_area = max(
-        1.0,
-        image_width * image_height,
-    )
-
-    area_ratio = (
-        area / image_area
-    )
-
-    try:
-        top = float(
-            row["top"]
-        )
-    except (
-        KeyError,
-        TypeError,
-        ValueError,
-    ):
-        top = 0.0
-
-    vertical_position = (
-        top
-        / max(
-            1.0,
-            image_height,
-        )
-    )
-
-    alphabetic_count = sum(
-        character.isalpha()
-        for character in text
-    )
-
-    digit_count = sum(
-        character.isdigit()
-        for character in text
-    )
-
-    score = (
-        confidence * 50.0
-    )
-
-    score += min(
-        area_ratio * 10000.0,
-        25.0,
-    )
-
-    if vertical_position <= 0.45:
-        score += 15.0
-
-    if alphabetic_count >= 3:
-        score += 10.0
-
-    if digit_count == 0:
-        score += 5.0
-
-    if 2 <= len(
-        text.split()
-    ) <= 8:
-        score += 5.0
-
-    return score
-
-
-def _evidence_from_row(
-    row,
-) -> dict[str, Any] | None:
-    """
-    Create structured evidence from one OCR row.
-    """
-
-    try:
-        bbox = {
-            "x1": int(
-                float(row["left"])
-            ),
-            "y1": int(
-                float(row["top"])
-            ),
-            "x2": int(
-                float(row["right"])
-            ),
-            "y2": int(
-                float(row["bottom"])
-            ),
+        return {
+            "x1": int(float(row["left"])),
+            "y1": int(float(row["top"])),
+            "x2": int(float(row["right"])),
+            "y2": int(float(row["bottom"])),
         }
-
-    except (
-        KeyError,
-        TypeError,
-        ValueError,
-    ):
+    except (KeyError, TypeError, ValueError):
         return None
 
+
+def _evidence(row, text: str | None = None) -> dict[str, Any] | None:
+    box = _bbox(row)
+    if box is None:
+        return None
     return {
-        "text": _clean_text(
-            row.get("text")
-        ),
-        "confidence": _normalize_confidence(
-            row.get("conf", 0.0)
-        ),
-        "bbox": bbox,
+        "text": _clean(text if text is not None else row.get("text")),
+        "confidence": _confidence(row.get("conf", 0)),
+        "bbox": box,
     }
 
 
-def _extract_product_value(
-    text: str,
-) -> str:
-    """
-    Extract only the value portion from an explicit product label.
-
-    Handles examples such as:
-
-        Product: Premium Rice
-        Product Name: Premium Rice
-        Name of Product: Premium Rice
-
-    without accidentally returning the label itself.
-    """
-
-    match = PRODUCT_LABEL_PATTERN.search(
-        text
-    )
-
-    if not match:
-        return ""
-
-    candidate = _clean_text(
-        match.group(1)
-    )
-
-    return candidate
+def _looks_like_noise(text: str, raw_text: str = "") -> bool:
+    text = _clean(text)
+    if len(text) < 2 or len(text) > 100:
+        return True
+    if re.fullmatch(r"[\d\s./:%₹$€£+\-]+", text):
+        return True
+    if NOISE_RE.search(text):
+        return True
+    if sum(c.isalpha() for c in text) < 2:
+        return True
+    if len(re.findall(r"\d", text)) > max(3, len(text) // 3):
+        return True
+    return False
 
 
-def _extract_brand_value(
-    text: str,
-) -> str:
-    """
-    Extract the value portion from an explicit brand/manufacturer
-    style label.
-    """
-
-    match = re.search(
-        r"\b(?:brand|manufactured\s+by|marketed\s+by)\b"
-        r"\s*[:\-]?\s*(.+)",
-        text,
-        re.IGNORECASE,
-    )
-
-    if not match:
-        return ""
-
-    return _clean_text(
-        match.group(1)
-    )
+def _clean_product_candidate(value: str) -> str:
+    value = _clean(value)
+    value = re.split(
+        r"\b(?:mrp|net\s*(?:qty|quantity)|ingredients?|nutrition|"
+        r"contains|may\s+contain|manufactured\s+by|marketed\s+by|"
+        r"packed\s+by|customer\s+care)\b",
+        value,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return value.strip(" :-.,;")
 
 
-def _explicit_product_candidate(
-    ocr_data,
-) -> dict[str, Any] | None:
-    """
-    Find an explicitly labelled product-name candidate.
-    """
+def _clean_brand_candidate(value: str) -> str:
+    value = _clean(value)
+    value = re.split(
+        r"\b(?:fssai|license|licence|manufactured|marketed|packed|"
+        r"imported|address|customer\s+care|consumer\s+care|"
+        r"www\.|@|phone|tel)\b",
+        value,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    value = value.strip(" :-.,;")
+    value = COMPANY_SUFFIX_RE.sub("", value).strip(" :-.,;")
+    return value
 
-    if (
-        ocr_data is None
-        or getattr(
-            ocr_data,
-            "empty",
-            True,
-        )
-    ):
-        return None
+
+def _explicit_candidates(ocr_data):
+    if ocr_data is None or getattr(ocr_data, "empty", True):
+        return [], []
+
+    products = []
+    brands = []
 
     for _, row in ocr_data.iterrows():
-
-        text = _clean_text(
-            row.get("text")
-        )
-
-        candidate = _extract_product_value(
-            text
-        )
-
-        if _looks_like_noise(
-            candidate
-        ):
+        text = _clean(row.get("text"))
+        if not text:
             continue
 
-        if not candidate:
-            continue
+        match = PRODUCT_LABEL_RE.search(text)
+        if match:
+            candidate = _clean_product_candidate(match.group(1))
+            if candidate and not _looks_like_noise(candidate):
+                ev = _evidence(row, text)
+                if ev:
+                    products.append({
+                        "value": candidate,
+                        "confidence": ev["confidence"],
+                        "evidence": ev,
+                        "source": "explicit_product_label",
+                    })
 
-        evidence = _evidence_from_row(
-            row
-        )
+        match = BRAND_LABEL_RE.search(text)
+        if match:
+            candidate = _clean_brand_candidate(match.group(1))
+            if candidate and not _looks_like_noise(candidate):
+                ev = _evidence(row, text)
+                if ev:
+                    brands.append({
+                        "value": candidate,
+                        "confidence": ev["confidence"],
+                        "evidence": ev,
+                        "source": "explicit_brand_label",
+                    })
 
-        if evidence is None:
-            continue
+        match = MANUFACTURER_BRAND_RE.search(text)
+        if match:
+            candidate = _clean_brand_candidate(match.group(1))
+            if candidate and not _looks_like_noise(candidate):
+                ev = _evidence(row, text)
+                if ev:
+                    brands.append({
+                        "value": candidate,
+                        "confidence": min(ev["confidence"], 0.90),
+                        "evidence": ev,
+                        "source": "manufacturer_label",
+                    })
 
-        return {
-            "value": candidate,
-            "confidence": evidence[
-                "confidence"
-            ],
-            "evidence": evidence,
-            "source": "explicit_product_label",
-        }
-
-    return None
+    return products, brands
 
 
-def _explicit_brand_candidate(
-    ocr_data,
-) -> dict[str, Any] | None:
-    """
-    Find an explicitly labelled brand candidate.
-    """
+def _layout_candidates(ocr_data, raw_text: str):
+    if ocr_data is None or getattr(ocr_data, "empty", True):
+        return []
 
-    if (
-        ocr_data is None
-        or getattr(
-            ocr_data,
-            "empty",
-            True,
-        )
-    ):
-        return None
+    try:
+        image_width = max(float(ocr_data["right"].max()), 1.0)
+        image_height = max(float(ocr_data["bottom"].max()), 1.0)
+    except (KeyError, TypeError, ValueError):
+        image_width = image_height = 1.0
+
+    candidates = []
 
     for _, row in ocr_data.iterrows():
-
-        text = _clean_text(
-            row.get("text")
-        )
-
-        if not BRAND_LABEL_PATTERN.search(
-            text
-        ):
+        text = _clean(row.get("text"))
+        if _looks_like_noise(text, raw_text):
             continue
-
-        candidate = _extract_brand_value(
-            text
-        )
-
-        if _looks_like_noise(
-            candidate
-        ):
-            continue
-
-        if not candidate:
-            continue
-
-        evidence = _evidence_from_row(
-            row
-        )
-
-        if evidence is None:
-            continue
-
-        return {
-            "value": candidate,
-            "confidence": evidence[
-                "confidence"
-            ],
-            "evidence": evidence,
-            "source": "explicit_brand_label",
-        }
-
-    return None
-
-
-def identify_product(
-    raw_text: str,
-    ocr_data=None,
-) -> dict[str, Any]:
-    """
-    Identify product name and brand from OCR output.
-
-    Explicitly labelled fields take precedence over layout-based
-    candidates.
-
-    Evidence is preserved with:
-
-        text
-        confidence
-        bounding box
-    """
-
-    explicit_product = (
-        _explicit_product_candidate(
-            ocr_data
-        )
-    )
-
-    explicit_brand = (
-        _explicit_brand_candidate(
-            ocr_data
-        )
-    )
-
-    product_candidates = []
-
-    if (
-        ocr_data is not None
-        and not getattr(
-            ocr_data,
-            "empty",
-            True,
-        )
-    ):
 
         try:
-            image_width = max(
-                float(
-                    ocr_data[
-                        "right"
-                    ].max()
-                ),
-                1.0,
-            )
+            left = float(row["left"])
+            top = float(row["top"])
+            right = float(row["right"])
+            bottom = float(row["bottom"])
+        except (KeyError, TypeError, ValueError):
+            continue
 
-            image_height = max(
-                float(
-                    ocr_data[
-                        "bottom"
-                    ].max()
-                ),
-                1.0,
-            )
+        confidence = _confidence(row.get("conf", 0))
+        width = max(1.0, right - left)
+        height = max(1.0, bottom - top)
+        area_ratio = width * height / (image_width * image_height)
 
-        except (
-            KeyError,
-            TypeError,
-            ValueError,
-        ):
-            image_width = 1.0
-            image_height = 1.0
+        score = confidence * 55
+        score += min(area_ratio * 12000, 25)
+        if top / image_height < 0.45:
+            score += 12
+        if 2 <= len(text.split()) <= 8:
+            score += 6
+        if len(text) >= 4:
+            score += 4
 
-        for _, row in ocr_data.iterrows():
+        if NUTRITION_CONTEXT_RE.search(text):
+            score -= 35
 
-            text = _clean_text(
-                row.get("text")
-            )
+        ev = _evidence(row)
+        if ev:
+            candidates.append({
+                "value": text,
+                "score": round(score, 3),
+                "confidence": confidence,
+                "evidence": ev,
+                "source": "layout_candidate",
+            })
 
-            if _looks_like_noise(
-                text
-            ):
-                continue
+    return sorted(candidates, key=lambda x: x["score"], reverse=True)
 
-            score = _candidate_score(
-                row,
-                image_width,
-                image_height,
-            )
 
-            evidence = _evidence_from_row(
-                row
-            )
+def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
+    """
+    Identify product and brand while preserving OCR evidence.
 
-            if evidence is None:
-                continue
+    Priority:
+      1. Explicit Product/Brand labels
+      2. Manufacturer/marketed-by brand evidence
+      3. High-confidence visual/layout candidate
 
-            product_candidates.append(
-                {
-                    "value": text,
-                    "score": round(
-                        score,
-                        3,
-                    ),
-                    "confidence": evidence[
-                        "confidence"
-                    ],
-                    "evidence": evidence,
-                    "source": "layout_candidate",
-                }
-            )
+    Generic nutrition/compliance/contact text is intentionally rejected.
+    """
+    explicit_products, explicit_brands = _explicit_candidates(ocr_data)
+    layout = _layout_candidates(ocr_data, raw_text or "")
 
-    product_candidates.sort(
-        key=lambda item: item["score"],
-        reverse=True,
+    selected_product = explicit_products[0] if explicit_products else (
+        layout[0] if layout else None
     )
-
-    selected_product = (
-        explicit_product
-        or (
-            product_candidates[0]
-            if product_candidates
-            else None
-        )
-    )
-
-    selected_brand = (
-        explicit_brand
-    )
+    selected_brand = explicit_brands[0] if explicit_brands else None
 
     return {
-        "product_name": (
-            selected_product["value"]
-            if selected_product
-            else None
-        ),
-
+        "product_name": selected_product["value"] if selected_product else None,
         "product_name_confidence": (
-            selected_product[
-                "confidence"
-            ]
-            if selected_product
-            else None
+            selected_product["confidence"] if selected_product else None
         ),
-
         "product_name_evidence": (
-            selected_product[
-                "evidence"
-            ]
-            if selected_product
-            else None
+            selected_product["evidence"] if selected_product else None
         ),
-
-        "brand": (
-            selected_brand["value"]
-            if selected_brand
-            else None
-        ),
-
+        "brand": selected_brand["value"] if selected_brand else None,
         "brand_confidence": (
-            selected_brand[
-                "confidence"
-            ]
-            if selected_brand
-            else None
+            selected_brand["confidence"] if selected_brand else None
         ),
-
         "brand_evidence": (
-            selected_brand[
-                "evidence"
-            ]
-            if selected_brand
-            else None
+            selected_brand["evidence"] if selected_brand else None
         ),
-
         "product_name_candidates": (
-            product_candidates[:5]
+            explicit_products[:5] or layout[:5]
         ),
+        "brand_candidates": explicit_brands[:5],
     }
