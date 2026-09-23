@@ -253,3 +253,88 @@ npm run dev
 ## Current next priorities
 
 See [TODO.md](TODO.md). The immediate focus is extraction reliability and evidence quality before deeper compliance automation.
+
+
+# Historical development handoff — complete checkpoint timeline
+
+## Checkpoint A — SIH problem selection and framing
+NIVAR began from SIH26034, focused on checking packaged-commodity declarations under the Legal Metrology (Packaged Commodities) Rules, 2011. The original concept was broader than OCR: scan packaging, identify mandatory declarations, detect presentation problems, and give an evidence-backed compliance result. Early pitch work emphasized the problem, solution, innovation, technical architecture, feasibility, risk mitigation, impact, scalability and genuine references.
+
+## Checkpoint B — OpenCV + Tesseract prototype
+The first practical prototype was developed as an OpenCV/Tesseract label analyzer on macOS. A Tkinter image picker, preprocessing experiments, Tesseract image_to_string/image_to_data, confidence values and bounding boxes were used. Green OCR boxes and automatic regions were introduced to make the result visually understandable.
+
+Real packaging images exposed the first major limitation: OCR can recover text while still failing to understand which text belongs to ingredients, nutrition, allergens or Legal Metrology declarations.
+
+## Checkpoint C — Automatic ROI/section detection
+An automatic analyzer was added to locate Ingredients, Nutrition and Allergens sections from OCR headings and coordinates. Example detections included Nutrition around x=387,y=2098 and Ingredients around x=2040,y=2017 on one large sample. This established the need to preserve OCR geometry instead of flattening the result into one text string.
+
+## Checkpoint D — PaddleOCR migration
+PaddleOCR became the primary OCR engine because the project needs stronger layout handling, multilingual Indian-language support, orientation handling and unwarping. PaddleOCR 3.7.0 and PaddlePaddle 3.2.2 became the pinned stack. Tesseract remains available as a secondary provider.
+
+Current PaddleOCR settings enable document orientation classification, document unwarping and text-line orientation. OCR results preserve text, confidence, bounding boxes and language, with coordinates mapped back to the original image after resizing.
+
+## Checkpoint E — Real-image extraction
+Large real package images were processed, including a 4110×5271 sample. OCR recovered substantial packaging text and the nutrition extractor recovered a complete set of useful nutrition values. This demonstrated that the project could move from OCR into structured food-label extraction.
+
+At the same time, ingredients and allergens were noisy and the first compliance implementation frequently returned NOT_FOUND even when declarations were visually present. This became the central reliability issue.
+
+## Checkpoint F — Semantic extraction architecture
+The codebase was separated into OCR, preprocessing, food analysis, product intelligence, compliance, fusion, repository, API and frontend layers. The key architectural decision was that OCR creates evidence while semantic extraction interprets it and the validator applies compliance rules.
+
+Product identity was deliberately simplified after an earlier implementation became over-optimized. The current hierarchy is explicit product-name labels first, then plausible front-panel candidates, joined OCR tokens and ordered global fallback. Manufacturer, address, nutrition, ingredients, compliance text and marketing copy are penalized/rejected as product-name candidates.
+
+## Checkpoint G — Manufacturer/address correction
+A real extraction bug selected an address-like OCR value as the manufacturer entity. The extractor was changed so legal/company entities are favored and address indicators, phone numbers, email and PIN codes are penalized. Manufacturer name and address remain separate evidence fields. Missing address evidence can force REVIEW instead of a false complete match.
+
+## Checkpoint H — Compliance validator
+The compliance layer was formalized around five core declarations: manufacturer/packer/importer, net quantity, manufacture/packing date, MRP and consumer care. Country of origin and generic/common-name handling are additional conditional/manual-review areas.
+
+The validator uses FOUND, REVIEW and NOT_FOUND. FOUND means detected evidence, REVIEW means incomplete/uncertain evidence, and NOT_FOUND means the current system did not detect evidence. These statuses are deliberately not treated as legal certification.
+
+## Checkpoint I — Multi-image fusion
+One package may distribute mandatory information across several faces. The system was therefore extended to accept up to eight images and fuse product identity, food fields, compliance findings, conflicts and evidence. Persisted source-image references are reconciled using scan order so provenance does not drift between analysis and stored images.
+
+## Checkpoint J — Persistence and API
+The backend evolved into a FastAPI application with product and scan persistence. Uploaded images are stored under product-specific storage, and analysis snapshots are retained. The API supports health, single/multi-image analysis and persisted scan-image retrieval.
+
+## Checkpoint K — React frontend
+The frontend became a React/TypeScript/Vite application with Home, Upload, Processing, Results and History pages. The Processing screen was redesigned around a large image, scanner animation, live-scan indicator, PaddleOCR/NIVAR indicators, thumbnails and pipeline progress.
+
+A frontend issue was reported where the new scanner UI appeared on the first scan but an older UI appeared on later scans. The source build passed, but a true browser-level repeated-scan test has not been established from the available tooling. Therefore this must not be described as fixed merely because CI builds successfully.
+
+## Checkpoint L — Regression tests and CI
+Regression tests were introduced for extraction, product identity, multi-image fusion, conflicts, repository behavior and semantic extraction. GitHub Actions runs backend regression tests and a frontend production build.
+
+During development, CI exposed malformed newline string literals in src/ocr/engine.py. Multiple syntax issues were repaired, including the region-text join. This reinforced the project rule that no change should be declared complete without verification.
+
+## Checkpoint M — Current primary blocker
+The current blocker is false negatives on the five mandatory declarations. A package can visibly contain the declarations while the final validator reports NOT_FOUND. This must be traced before adding advanced computer-vision features.
+
+The debugging path must be: actual image → raw PaddleOCR lines → bounding boxes → region detection → declaration candidate generation → candidate rejection/confidence → validator. For every declaration, determine whether the text was absent from OCR, excluded by region detection, missed by pattern matching, split across OCR lines, rejected as the wrong semantic candidate, or downgraded by confidence.
+
+Do not solve this by taking the nearest arbitrary number. Packaging contains dates, batch numbers, nutrition values, phone numbers, PIN codes and prices. Candidate extraction must be declaration-specific and evidence-aware.
+
+## Checkpoint N — Curved/cylindrical packaging is a later phase
+PaddleOCR already has unwarping enabled, but cylindrical and strongly curved packaging may require an additional cylindrical unwrap or multi-pass OCR strategy. The proposed future approach is original image + unwarped image + cylindrical representation when needed, followed by confidence/text-coverage comparison and evidence fusion. This work should begin only after the five-declaration false-negative problem is understood.
+
+## Current implementation rules
+1. Inspect the current repository before changing architecture.
+2. Preserve OCR text, confidence, bbox and source-image provenance.
+3. Prefer semantic/spatial evidence over exact-string matching.
+4. Do not infer declaration values from arbitrary numbers.
+5. Do not hard-code coordinates for one package.
+6. Keep legal rules in the compliance layer.
+7. Keep API code separate from OCR and extraction.
+8. Use multi-image fusion for package faces.
+9. Add regression tests for every extraction bug fixed.
+10. Verify CI and, when relevant, browser/runtime behavior before claiming success.
+
+## Immediate continuation task
+Take one real failing image for which the five mandatory declarations are visibly present. Instrument or inspect the existing pipeline to show the OCR lines and bboxes for each declaration. Trace each one through enhanced_extractor and validator. Fix the actual evidence-loss point, add a regression fixture/test, run the backend tests and frontend build, then evaluate whether cylindrical/curved handling is still necessary for that failure.
+
+## Continuation prompt for a new chat
+I am continuing NIVAR, repository tanmayjain9059/NIVAR, branch semantic-extraction-rewrite. Read docs/CODEX_CONTEXT.md before doing anything. Do not restart the project or invent a new architecture. The immediate blocker is false negatives: the five mandatory Legal Metrology declarations can be visibly present on a package but NIVAR returns NOT_FOUND. Trace one real failing image through PaddleOCR text/bboxes, region detection, enhanced_extractor, candidate scoring and validator. Identify exactly where evidence is lost, make the smallest robust evidence-aware fix, add regression tests, run tests/CI, and verify before claiming success. Only after that work on curved/bent/cylindrical packaging using PaddleOCR unwarping and, if necessary, cylindrical unwrap/multi-pass OCR.
+
+## Repository links
+Context document: https://github.com/tanmayjain9059/NIVAR/blob/semantic-extraction-rewrite/docs/CODEX_CONTEXT.md
+Development branch: https://github.com/tanmayjain9059/NIVAR/tree/semantic-extraction-rewrite
