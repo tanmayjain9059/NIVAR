@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.services.analyzer_service import analyze_product_images
 from app.services.product_service import ProductService
@@ -27,6 +28,12 @@ app.add_middleware(
 )
 
 product_service=ProductService()
+
+# Serve the Vite production bundle from the same FastAPI origin.
+# API routes are registered before this mount so /api/* remains available.
+FRONTEND_DIST=Path("frontend/dist")
+if FRONTEND_DIST.exists():
+    app.mount("/assets",StaticFiles(directory=FRONTEND_DIST/"assets"),name="frontend-assets")
 
 ALLOWED_EXTENSIONS={".jpg",".jpeg",".png",".webp"}
 MAX_UPLOAD_MB=15
