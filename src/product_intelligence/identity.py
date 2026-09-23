@@ -465,16 +465,25 @@ def identify_product(
             + _joined_front_candidates(ocr_data)
         )
 
-        # Global OCR is a final recall source. It is intentionally penalized
-        # so that it cannot outrank spatial front-panel evidence.
-        for line in str(raw_text or "").splitlines():
+        # Global OCR is a final recall source, but only lines that also
+        # appear in OCR evidence are eligible for identity selection.
+        # This preserves provenance instead of inventing bbox-less evidence.
+        raw_lines = [
+            _clean(line)
+            for line in str(raw_text or "").splitlines()
+            if _clean(line)
+        ]
+        for row in _rows(ocr_data):
+            text = _clean(row.get("text"))
+            if not text or text not in raw_lines:
+                continue
             candidate = _candidate(
-                line,
-                source="global_ocr_fallback",
+                text,
+                row,
+                source="ocr_evidence_fallback",
                 front=False,
-                confidence=0.5,
+                confidence=_confidence(row.get("conf", 0)),
             )
-
             if candidate:
                 candidate["score"] -= 20
                 product_candidates.append(candidate)
