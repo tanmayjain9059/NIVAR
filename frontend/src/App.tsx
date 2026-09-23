@@ -2,159 +2,17 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Navigation } from "./components/layout/Navigation";
 import type { AnalyzeResponse } from "./types/analyzer";
-
-import Home from "./pages/Home";
-import Upload from "./pages/Upload";
-import Processing from "./pages/Processing";
-import Results from "./pages/Results";
-import History from "./pages/History";
-
-export type AppState =
-  | "HOME"
-  | "UPLOAD"
-  | "PROCESSING"
-  | "RESULTS"
-  | "HISTORY";
-
-function App() {
-  const [appState, setAppState] = useState<AppState>("HOME");
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [analysisResult, setAnalysisResult] =
-    useState<AnalyzeResponse | null>(null);
-
-  const navigateTo = (state: AppState) => {
-    setAppState(state);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleNavigation = (view: string) => {
-    if (view === "Overview") {
-      navigateTo("HOME");
-      return;
-    }
-
-    if (view === "Scan Product") {
-      navigateTo("UPLOAD");
-      return;
-    }
-
-    if (view === "History") {
-      navigateTo("HISTORY");
-    }
-  };
-
-  const pageVariants = {
-    initial: { opacity: 0, y: 10 },
-    in: { opacity: 1, y: 0 },
-    out: { opacity: 0, y: -10 },
-  };
-
-  return (
-    <div className="min-h-screen bg-civic-bg flex flex-col font-sans">
-      <Navigation
-        currentView={
-          appState === "HOME"
-            ? "Overview"
-            : appState === "HISTORY"
-            ? "History"
-            : "Scan Product"
-        }
-        onNavigate={handleNavigation}
-      />
-
-      <main className="flex-1 flex flex-col relative">
-        <AnimatePresence mode="wait">
-          {appState === "HOME" && (
-            <motion.div
-              key="HOME"
-              initial="initial"
-              animate="in"
-              exit="out"
-              variants={pageVariants}
-              transition={{ ease: "easeOut", duration: 0.35 }}
-              className="flex-1 flex flex-col"
-            >
-              <Home onStart={() => navigateTo("UPLOAD")} />
-            </motion.div>
-          )}
-
-          {appState === "UPLOAD" && (
-            <motion.div
-              key="UPLOAD"
-              initial="initial"
-              animate="in"
-              exit="out"
-              variants={pageVariants}
-              transition={{ ease: "easeOut", duration: 0.35 }}
-              className="flex-1 flex flex-col"
-            >
-              <Upload
-                onFileSelected={(file) => {
-                  setSelectedImage(file);
-                  navigateTo("PROCESSING");
-                }}
-              />
-            </motion.div>
-          )}
-
-          {appState === "PROCESSING" && (
-            <motion.div
-              key="PROCESSING"
-              initial="initial"
-              animate="in"
-              exit="out"
-              variants={pageVariants}
-              transition={{ ease: "easeOut", duration: 0.35 }}
-              className="flex-1 flex flex-col"
-            >
-              <Processing
-                file={selectedImage}
-                onComplete={(result) => {
-                  setAnalysisResult(result);
-                  navigateTo("RESULTS");
-                }}
-              />
-            </motion.div>
-          )}
-
-          {appState === "RESULTS" && analysisResult && (
-            <motion.div
-              key="RESULTS"
-              initial="initial"
-              animate="in"
-              exit="out"
-              variants={pageVariants}
-              transition={{ ease: "easeOut", duration: 0.35 }}
-              className="flex-1 flex flex-col"
-            >
-              <Results
-                result={analysisResult}
-                onRestart={() => {
-                  setSelectedImage(null);
-                  setAnalysisResult(null);
-                  navigateTo("UPLOAD");
-                }}
-              />
-            </motion.div>
-          )}
-
-          {appState === "HISTORY" && (
-            <motion.div
-              key="HISTORY"
-              initial="initial"
-              animate="in"
-              exit="out"
-              variants={pageVariants}
-              transition={{ ease: "easeOut", duration: 0.35 }}
-              className="flex-1 flex flex-col"
-            >
-              <History />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-    </div>
-  );
+import Home from "./pages/Home"; import Upload from "./pages/Upload"; import Processing from "./pages/Processing"; import Results from "./pages/Results"; import History from "./pages/History";
+export type AppState="HOME"|"UPLOAD"|"PROCESSING"|"RESULTS"|"HISTORY";
+export default function App(){
+ const [state,setState]=useState<AppState>("HOME"); const [files,setFiles]=useState<File[]>([]); const [result,setResult]=useState<AnalyzeResponse|null>(null);
+ const nav=(s:AppState)=>{setState(s);window.scrollTo({top:0,behavior:"smooth"});};
+ const handle=(v:string)=>v==="Overview"?nav("HOME"):v==="Scan Product"?nav("UPLOAD"):v==="History"&&nav("HISTORY");
+ return <div className="min-h-screen bg-civic-bg flex flex-col font-sans"><Navigation currentView={state==="HOME"?"Overview":state==="HISTORY"?"History":"Scan Product"} onNavigate={handle}/><main className="flex-1 flex flex-col"><AnimatePresence mode="wait">
+ {state==="HOME"&&<motion.div key="home" className="flex-1" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><Home onStart={()=>nav("UPLOAD")}/></motion.div>}
+ {state==="UPLOAD"&&<motion.div key="upload" className="flex-1" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}><Upload onFilesSelected={(f)=>{setFiles(f);nav("PROCESSING")}}/></motion.div>}
+ {state==="PROCESSING"&&<motion.div key="processing" className="flex-1" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}><Processing files={files} onComplete={(r)=>{setResult(r);nav("RESULTS")}}/></motion.div>}
+ {state==="RESULTS"&&result&&<motion.div key="results" className="flex-1" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}><Results result={result} onRestart={()=>{setFiles([]);setResult(null);nav("UPLOAD")}}/></motion.div>}
+ {state==="HISTORY"&&<motion.div key="history" className="flex-1" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><History/></motion.div>}
+ </AnimatePresence></main></div>;
 }
-
-export default App;
