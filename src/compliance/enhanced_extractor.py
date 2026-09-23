@@ -59,7 +59,7 @@ LABELS = {
 
 UNITS=r"(?:g|gm|gms|kg|mg|ml|l|ltr|litre|liter|pcs|pieces|pc|units?|किग्रा|ग्राम|मि?ली)"
 QUANTITY_RE=re.compile(rf"\b\d+(?:\.\d+)?\s*{UNITS}\b",re.I)
-DATE_RE=re.compile(r"\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}[/-](?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[/-]\d{2,4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[/-]\d{2,4})\b",re.I)
+DATE_RE=re.compile(r"(?<!\d)(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}[/-](?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[/-]\d{2,4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[/-]\d{2,4}|\d{1,2}(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\d{2,4})(?!\d)",re.I)
 MRP_RE=re.compile(r"(?:₹|rs\.?|inr)?\s*\d{1,5}(?:\.\d{1,2})?",re.I)
 EMAIL_RE=re.compile(r"\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b",re.I)
 PHONE_RE=re.compile(r"\b(?:\+?91[\s-]?)?(?:0)?[6-9]\d{9}\b|\b(?:1800|1860)[\s-]?\d{2,4}[\s-]?\d{3,4}\b")
@@ -269,10 +269,12 @@ def _manufacture_date(text,ocr):
         label=_norm(row.get("text"))
         if _label_match(label,LABELS["manufacture_date"]) and not re.search(r"best\s*before|expiry|use\s*by",label,re.I):
             near=_nearby_values(row,ocr,lambda x:bool(DATE_RE.search(x)),1500)
-            if near:return _result(True,f"{label} {near[0][1].get('text')}",_evidence(near[0][1]))
+            if near:
+                value_row=near[0][1]
+                return _result(True,f"{label} {value_row.get('text')}",_evidence(value_row))
     pattern=_label_match(text,LABELS["manufacture_date"])
     if pattern:
-        tail=text[pattern.end():pattern.end()+120]
+        tail=text[pattern.end():pattern.end()+180]
         m=DATE_RE.search(tail)
         if m:return _result(True,m.group(0))
     return _result(bool(pattern),pattern.group(0) if pattern else None,None,bool(pattern))
