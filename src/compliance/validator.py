@@ -29,6 +29,11 @@ def validate_declarations(raw_text,compliance_text=None,ocr_data=None):
             "status":status,
         }
         if result.get("evidence"): checks[key]["evidence"]=result["evidence"]
+        if key=="manufacturer_packer_importer":
+            checks[key]["manufacturer_name"]=result.get("manufacturer_name")
+            checks[key]["address_detected"]=result.get("address_detected",False)
+            if result.get("address_text"):
+                checks[key]["address_text"]=result["address_text"]
         if result.get("value_missing"):
             checks[key]["note"]="Declaration label detected, but the required value was not detected. Manual verification required."
 
