@@ -182,3 +182,25 @@ def test_food_parsers_are_section_scoped():
     )
     assert unrelated_global_text not in ingredient_section
     assert unrelated_global_text not in allergen_section
+
+def test_compliance_detects_split_ocr_boxes_for_all_five_declarations():
+    ocr = pd.DataFrame([
+        {"text": "Manufactured by", "left": 100, "top": 100, "right": 300, "bottom": 130, "conf": 0.96},
+        {"text": "ABC Foods Pvt Ltd", "left": 320, "top": 100, "right": 600, "bottom": 130, "conf": 0.95},
+        {"text": "Plot 12 Industrial Area Hyderabad 500001", "left": 100, "top": 140, "right": 600, "bottom": 170, "conf": 0.94},
+        {"text": "Net Quantity", "left": 100, "top": 220, "right": 280, "bottom": 250, "conf": 0.96},
+        {"text": "500 g", "left": 320, "top": 220, "right": 390, "bottom": 250, "conf": 0.95},
+        {"text": "MFD", "left": 100, "top": 300, "right": 170, "bottom": 330, "conf": 0.96},
+        {"text": "08/2026", "left": 320, "top": 300, "right": 410, "bottom": 330, "conf": 0.95},
+        {"text": "MRP", "left": 100, "top": 380, "right": 160, "bottom": 410, "conf": 0.96},
+        {"text": "₹120", "left": 320, "top": 380, "right": 380, "bottom": 410, "conf": 0.95},
+        {"text": "Consumer Care", "left": 100, "top": 460, "right": 260, "bottom": 490, "conf": 0.96},
+        {"text": "1800 123 4567", "left": 320, "top": 460, "right": 470, "bottom": 490, "conf": 0.95},
+    ])
+    result = validate_declarations("", "", ocr_data=ocr)
+    checks = result["checks"]
+    assert checks["manufacturer_packer_importer"]["status"] == "FOUND"
+    assert checks["net_quantity"]["status"] == "FOUND"
+    assert checks["manufacture_date"]["status"] == "FOUND"
+    assert checks["mrp"]["status"] == "FOUND"
+    assert checks["consumer_care"]["status"] == "FOUND"
