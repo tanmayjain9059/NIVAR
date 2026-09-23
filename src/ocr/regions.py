@@ -75,7 +75,12 @@ def _region_from_anchor(
     if bottom <= y or right <= x:
         return None
 
-    return {"x": x, "y": y, "w": right - x, "h": bottom - y}
+    return {
+        "x": x,
+        "y": y,
+        "w": right - x,
+        "h": bottom - y,
+    }
 
 
 def detect_nutrition_region(image, data, config):
