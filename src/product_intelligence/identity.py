@@ -149,7 +149,7 @@ def _clean_manufacturer_brand(value: str) -> str:
     value = re.sub(
         r"\s+(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|"
         r"llp|inc\.?|incorporated|corp\.?|corporation|company|"
-        r"industries|food\s+products|enterprises|traders|manufacturers?)\.?$",
+        r"industries|food\s+products|foods|enterprises|traders|manufacturers?)\.?$",
         "",
         value,
         flags=re.I,
