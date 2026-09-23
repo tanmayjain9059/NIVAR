@@ -20,7 +20,7 @@ from fastapi import (
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse\nfrom fastapi.staticfiles import StaticFiles
 
 from app.services.analyzer_service import (
     analyze_image,
@@ -573,4 +573,4 @@ def get_scan_report(
             f"compliance_report_"
             f"{safe_scan_id}.pdf"
         ),
-    )
+    )\n\n# Production frontend assets. API routes above keep their /api/* paths.\nfrontend_dist = Path("frontend/dist")\nif frontend_dist.exists():\n    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")\n
