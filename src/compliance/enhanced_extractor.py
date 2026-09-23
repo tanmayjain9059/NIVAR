@@ -120,28 +120,95 @@ def _result(detected,matched_text,evidence=None,value_missing=False):
     if value_missing: result["value_missing"]=True
     return result
 
-def _manufacturer(text,ocr):
-    labels=_rows(ocr)
-    for row in labels:
-        label_text=_norm(row.get("text"))
-        if _label_match(label_text,LABELS["manufacturer_packer_importer"]):
-            near=_nearby_values(
-                row,
-                ocr,
-                lambda x: bool(re.search(r"[A-Za-z\u0900-\u0DFF]{3,}",x))
-                and not _label_match(x,LABELS["manufacturer_packer_importer"]),
-                650,
-            )
-            if near:
-                value=_norm(near[0][1].get("text"))
-                return _result(True,f"{label_text} {value}",_evidence(near[0][1]))
-            return _result(True,label_text,_evidence(row),True)
+
+_COMPANY_SUFFIX_RE=re.compile(
+    r"\b(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|llp|inc\.?|incorporated|corp\.?|corporation|co\.?|company|industries|foods|food\s+products|enterprises|traders|manufacturers?)\b",
+    re.I,
+)
+_ADDRESS_RE=re.compile(
+    r"\b(?:road|rd\.?|street|st\.?|lane|ln\.?|avenue|ave\.?|industrial\s+area|estate|plot|floor|building|bldg|sector|block|district|dist\.?|taluka|tehsil|village|nagar|colony|pin(?:code)?|postcode|zip|near|opp\.?|opposite|phase|highway|city|state)\b",
+    re.I,
+)
+
+def _manufacturer_candidates(text,ocr,label_row=None):
+    candidates=[]
+    if label_row is not None:
+        for score,row in _nearby_values(
+            label_row,
+            ocr,
+            lambda x: bool(re.search(r"[A-Za-z\u0900-\u0DFF]{3,}",x))
+            and not _label_match(x,LABELS["manufacturer_packer_importer"]),
+            1000,
+        ):
+            candidates.append((_norm(row.get("text")),score,_evidence(row)))
     pattern=_label_match(text,LABELS["manufacturer_packer_importer"])
     if pattern:
-        after=text[pattern.end():].strip(" :-")
-        lines=[x.strip() for x in re.split(r"\n+",after) if x.strip()]
-        if lines:
-            return _result(True,f"{pattern.group(0)} {lines[0]}")
+        tail=text[pattern.end():]
+        stop_patterns=[]
+        for key,patterns in LABELS.items():
+            if key=="manufacturer_packer_importer":
+                continue
+            stop_patterns.extend(patterns)
+        stops=[re.search(pat,tail,re.I) for pat in stop_patterns]
+        stops=[m.start() for m in stops if m]
+        if stops:
+            tail=tail[:min(stops)]
+        for line in re.split(r"\n+",tail):
+            value=_norm(line).strip(" :-.,;")
+            if value:
+                candidates.append((value,50,None))
+    return candidates
+
+def _manufacturer_value(candidates):
+    ranked=[]
+    seen=set()
+    for value,base_score,evidence in candidates:
+        value=_norm(value)
+        if len(value)<3:
+            continue
+        key=value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        score=float(base_score)
+        if _COMPANY_SUFFIX_RE.search(value):
+            score+=90
+        if _ADDRESS_RE.search(value):
+            score-=70
+        if re.search(r"\b(?:phone|tel|mob|mobile|email|www\.|http)\b|@",value,re.I):
+            score-=100
+        if re.search(r"\b\d{6}\b",value):
+            score-=50
+        if len(value)>120:
+            score-=30
+        if re.search(r"[A-Za-z]{3,}\s+(?:pvt|private|ltd|limited|llp|inc|corp|company|industries|foods?)",value,re.I):
+            score+=45
+        ranked.append((score,value,evidence))
+    return max(ranked,key=lambda x:x[0]) if ranked else None
+
+def _manufacturer(text,ocr):
+    pattern=_label_match(text,LABELS["manufacturer_packer_importer"])
+    labels=_rows(ocr)
+    label_rows=[
+        row for row in labels
+        if _label_match(_norm(row.get("text")),LABELS["manufacturer_packer_importer"])
+    ]
+
+    candidates=[]
+    for row in label_rows:
+        candidates.extend(_manufacturer_candidates(text,ocr,row))
+    if pattern:
+        candidates.extend(_manufacturer_candidates(text,ocr,None))
+
+    chosen=_manufacturer_value(candidates)
+    if chosen:
+        score,value,evidence=chosen
+        label_text=_norm(pattern.group(0) if pattern else (
+            label_rows[0].get("text") if label_rows else "Manufacturer/Packer/Importer"
+        ))
+        return _result(True,f"{label_text} {value}",evidence)
+
+    if pattern:
         return _result(True,pattern.group(0),None,True)
     return _result(False,None)
 
