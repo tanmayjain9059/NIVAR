@@ -5,9 +5,6 @@ Common OCR engine interface for Tesseract and PaddleOCR.
 import re
 
 import pandas as pd
-import pytesseract
-
-from .provider import create_ocr_engine
 
 
 def _paddle_result_to_dataframe(result):
@@ -81,6 +78,7 @@ def build_ocr_summary(data, engine_name, language=None):
 
 
 def _run_tesseract(image, config):
+    import pytesseract
     data = pytesseract.image_to_data(
         image,
         config=config["global_ocr_config"],
@@ -106,6 +104,7 @@ def _run_tesseract(image, config):
 
 
 def _run_paddle(image_path, coordinate_scale=1.0, language="en"):
+    from .provider import create_ocr_engine
     if image_path is None:
         raise ValueError("image_path is required when using PaddleOCR.")
 
@@ -182,6 +181,7 @@ def ocr_roi(roi, config):
     cleaned = prepare_roi_for_ocr(roi, config)
 
     if str(config.get("ocr_engine", "tesseract")).lower().strip() == "tesseract":
+        import pytesseract
         return pytesseract.image_to_string(
             cleaned,
             config=config["roi_ocr_config"],
