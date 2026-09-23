@@ -204,3 +204,36 @@ def test_compliance_detects_split_ocr_boxes_for_all_five_declarations():
     assert checks["manufacture_date"]["status"] == "FOUND"
     assert checks["mrp"]["status"] == "FOUND"
     assert checks["consumer_care"]["status"] == "FOUND"
+
+
+def test_compliance_recovers_real_paddle_ocr_date_and_landline_variants():
+    """Regression for OCR forms observed in real package scans."""
+    ocr = pd.DataFrame([
+        {"text": "Manufactured By", "left": 100, "top": 100, "right": 300, "bottom": 130, "conf": 0.99},
+        {"text": "Zydus Wellness Limited", "left": 320, "top": 100, "right": 620, "bottom": 130, "conf": 0.98},
+        {"text": "Scheme No. 63, Survey No. 536, Ahmedabad", "left": 100, "top": 140, "right": 620, "bottom": 170, "conf": 0.96},
+        {"text": "NET WEIGHT", "left": 100, "top": 220, "right": 300, "bottom": 250, "conf": 0.98},
+        {"text": "55 g", "left": 320, "top": 220, "right": 390, "bottom": 250, "conf": 0.97},
+        {"text": "MFG. DATE", "left": 100, "top": 300, "right": 240, "bottom": 330, "conf": 0.98},
+        {"text": "16/07/2026", "left": 320, "top": 300, "right": 470, "bottom": 330, "conf": 0.97},
+        {"text": "MRP", "left": 100, "top": 380, "right": 160, "bottom": 410, "conf": 0.98},
+        {"text": "50.00", "left": 320, "top": 380, "right": 390, "bottom": 410, "conf": 0.97},
+        {"text": "For Consumer Complaint / Query / Feedback", "left": 100, "top": 460, "right": 520, "bottom": 490, "conf": 0.98},
+        {"text": "0120-2400286", "left": 100, "top": 500, "right": 280, "bottom": 530, "conf": 0.97},
+    ])
+    result = validate_declarations("", "", ocr_data=ocr)
+    checks = result["checks"]
+    assert checks["manufacturer_packer_importer"]["status"] == "FOUND"
+    assert checks["net_quantity"]["status"] == "FOUND"
+    assert checks["manufacture_date"]["status"] == "FOUND"
+    assert checks["mrp"]["status"] == "FOUND"
+    assert checks["consumer_care"]["status"] == "FOUND"
+
+
+def test_compliance_recovers_compact_month_date_from_ocr():
+    ocr = pd.DataFrame([
+        {"text": "MFG. DATE", "left": 100, "top": 100, "right": 240, "bottom": 130, "conf": 0.98},
+        {"text": "27DEC2023", "left": 260, "top": 100, "right": 430, "bottom": 130, "conf": 0.97},
+    ])
+    result = validate_declarations("", "", ocr_data=ocr)
+    assert result["checks"]["manufacture_date"]["status"] == "FOUND"
