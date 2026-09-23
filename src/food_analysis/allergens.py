@@ -49,8 +49,6 @@ def _extract_known_allergens(value: str) -> list[str]:
     value = _norm(value).lower()
     found = []
 
-    # Match known allergen phrases only. This intentionally discards
-    # arbitrary OCR text that follows a valid declaration.
     for alias, canonical in _CANONICAL_PATTERNS:
         if re.search(rf"\b{re.escape(alias)}\b", value):
             if canonical not in found:
