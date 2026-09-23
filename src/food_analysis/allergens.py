@@ -47,12 +47,16 @@ def _norm(value: str) -> str:
 
 def _extract_known_allergens(value: str) -> list[str]:
     value = _norm(value).lower()
-    found = []
+    matches = []
 
     for alias, canonical in _CANONICAL_PATTERNS:
-        if re.search(rf"\b{re.escape(alias)}\b", value):
-            if canonical not in found:
-                found.append(canonical)
+        for match in re.finditer(rf"\b{re.escape(alias)}\b", value):
+            matches.append((match.start(), canonical))
+
+    found = []
+    for _, canonical in sorted(matches, key=lambda item: item[0]):
+        if canonical not in found:
+            found.append(canonical)
 
     return found
 
