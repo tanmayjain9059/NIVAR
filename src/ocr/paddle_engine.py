@@ -30,13 +30,13 @@ SUPPORTED_LANGUAGES = {
 def _get_paddle(lang: str) -> PaddleOCR:
     return PaddleOCR(
         lang=lang,
-        use_doc_orientation_classify=False,
-        use_doc_unwarping=False,
-        use_textline_orientation=False,
+        use_doc_orientation_classify=True,
+        use_doc_unwarping=True,
+        use_textline_orientation=True,
     )
 
 class PaddleOCREngine:
-    def __init__(self, lang: str = "en", max_side: int = 2400):
+    def __init__(self, lang: str = "en", max_side: int = 3200):
         self.lang = lang if lang in SUPPORTED_LANGUAGES else "en"
         self.max_side = max_side
         self.ocr = _get_paddle(self.lang)
