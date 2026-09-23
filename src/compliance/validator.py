@@ -18,7 +18,9 @@ def validate_declarations(raw_text,compliance_text=None,ocr_data=None):
         rule=MANDATORY_DECLARATIONS.get(key,{"label":key.replace("_"," ").title()})
         result=extracted.get(key,{"detected":False,"matched_text":None})
         if result.get("value_missing"): status="REVIEW"
-        elif result.get("detected"): status="FOUND"
+        elif result.get("detected"):
+            confidence=(result.get("evidence") or {}).get("confidence")
+            status="REVIEW" if confidence is not None and confidence < 0.55 else "FOUND"
         else: status="NOT_FOUND"
         checks[key]={
             "label":rule["label"],
