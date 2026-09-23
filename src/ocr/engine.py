@@ -137,8 +137,7 @@ def _run_paddle(image_path, coordinate_scale=1.0, language="en"):
                 data[column] * coordinate_scale
             ).round().astype(int)
 
-    raw_text = "
-".join(
+    raw_text = "\\n".join(
         str(line.get("text", "")).strip()
         for line in result.get("lines", [])
         if str(line.get("text", "")).strip()
