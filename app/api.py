@@ -145,11 +145,14 @@ async def analyze_product(
                 "source_url":f"/api/v1/products/{product.product_id}/scans/{scan.scan_id}/images/{image.image_id}",
             })
 
-        by_id={item["image_id"]:item for item in source_urls}
-        for entry in analysis_snapshot.get("images",[]):
-            item=by_id.get(entry.get("image_id"))
-            if item:
-                entry.update(item)
+        # Reconcile transient OCR image IDs with the persisted image records
+        # by stable scan order. This prevents provenance/image-link drift.
+        analysis_images=analysis_snapshot.get("images",[])
+        for index, entry in enumerate(analysis_images):
+            if index >= len(source_urls):
+                break
+            entry.update(source_urls[index])
+            entry["analysis"] = entry.get("analysis", {})
 
         if source_urls:
             analysis_snapshot["source_image"]=source_urls[0]["source_url"]
