@@ -622,14 +622,22 @@ def process_image(file_path, config=CONFIG):
             config,
         )
 
-    # Section OCR is the primary signal, while global OCR provides a
-    # recall fallback when a region detector clips or misses visible text.
-    ingredients_source = "\n".join(
-        part for part in (ingredients_text, raw_text) if part
-    )
-    allergens_source = "\n".join(
-        part for part in (allergen_text, raw_text) if part
-    )
+    # Food parsers consume section-scoped OCR only. Global OCR remains
+    # available to identity/compliance logic but must not contaminate a
+    # bounded section such as ingredients or allergens.
+    ingredients_source = ingredients_text
+    if not ingredients_source.strip():
+        ingredients_source = extract_text_from_region(
+            data,
+            ingredients_region,
+        )
+
+    allergens_source = allergen_text
+    if not allergens_source.strip():
+        allergens_source = extract_text_from_region(
+            data,
+            allergen_region,
+        )
 
     ingredients = parse_ingredients(
         ingredients_source,
@@ -741,7 +749,8 @@ def process_image(file_path, config=CONFIG):
     structured_result["quantity"] = _matched("net_quantity")
     manufacturer_check = checks.get("manufacturer_packer_importer", {})
     structured_result["manufacturer"] = (
-        manufacturer_check.get("evidence", {}).get("manufacturer_name")
+        manufacturer_check.get("manufacturer_name")
+        or manufacturer_check.get("evidence", {}).get("manufacturer_name")
         or manufacturer_check.get("matched_text")
     )
     structured_result["manufacturer_address_detected"] = bool(
