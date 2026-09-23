@@ -31,7 +31,8 @@ product_service=ProductService()
 
 # Serve the Vite production bundle from the same FastAPI origin.
 # API routes are registered before this mount so /api/* remains available.
-FRONTEND_DIST=Path("frontend/dist")
+BASE_DIR=Path(__file__).resolve().parent.parent
+FRONTEND_DIST=BASE_DIR/"frontend"/"dist"
 FRONTEND_ASSETS=FRONTEND_DIST/"assets"
 if FRONTEND_ASSETS.is_dir():
     app.mount("/assets",StaticFiles(directory=FRONTEND_ASSETS,html=False),name="frontend-assets")
@@ -43,7 +44,7 @@ SUPPORTED_LANGUAGES={"en","hi","mr","te","ta","ka","sa","bho","mai","gom","bgc"}
 
 @app.get("/")
 def root():
-    frontend_index=Path("frontend/dist/index.html")
+    frontend_index=FRONTEND_DIST/"index.html"
     if frontend_index.exists():
         return FileResponse(frontend_index)
     return {
@@ -69,6 +70,8 @@ def get_scan_image(product_id:str,scan_id:str,image_id:str):
     for image in getattr(scan,"images",[]) or []:
         if getattr(image,"image_id",None)==image_id:
             path=Path(image.image_path)
+            if not path.is_absolute():
+                path=BASE_DIR/path
             if not path.exists():
                 raise HTTPException(status_code=404,detail="Stored image not found.")
             return FileResponse(path)
