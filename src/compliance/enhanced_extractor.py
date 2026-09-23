@@ -287,7 +287,7 @@ def _mrp(text,ocr):
         if label:
             tail=line[label.end():]
             m=MRP_RE.search(tail)
-            if m:return _result(True,line.strip())
+            if m:return _result(True,f"{label.group(0)} {m.group(0).strip()}")
     for row in _rows(ocr):
         label=_norm(row.get("text"))
         if _label_match(label,LABELS["mrp"]):
