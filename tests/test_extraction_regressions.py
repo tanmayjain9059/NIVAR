@@ -1,7 +1,10 @@
 import pandas as pd
 
 from src.compliance.validator import validate_declarations
+from src.food_analysis.allergens import parse_allergens
+from src.food_analysis.ingredients import parse_ingredients
 from src.food_analysis.nutrition import parse_nutrition_text
+from src.ocr.engine import extract_text_from_region
 from src.product_intelligence.fusion import fuse_image_analyses
 
 
@@ -97,7 +100,7 @@ def test_product_name_prefers_explicit_food_name_over_brand_and_manufacturer():
         {"text": "Net Quantity 5 kg", "left": 100, "top": 1600, "right": 350, "bottom": 1640, "conf": 96},
     ])
     result = identify_product(
-        "ACME\\nPremium Basmati Rice\\nManufactured by ABC Foods Pvt Ltd",
+        "ACME\nPremium Basmati Rice\nManufactured by ABC Foods Pvt Ltd",
         ocr_data=ocr,
     )
     assert result["product_name"] == "Premium Basmati Rice"
@@ -113,7 +116,7 @@ def test_product_name_is_not_manufacturer_address_or_nutrition_noise():
         {"text": "Protein 9 g", "left": 100, "top": 950, "right": 300, "bottom": 990, "conf": 99},
     ])
     result = identify_product(
-        "ABC Foods Pvt Ltd\\nPlot 12 Industrial Area Hyderabad\\nEnergy 412 kcal\\nProtein 9 g",
+        "ABC Foods Pvt Ltd\nPlot 12 Industrial Area Hyderabad\nEnergy 412 kcal\nProtein 9 g",
         ocr_data=ocr,
     )
     assert result["product_name"] is None
@@ -149,29 +152,33 @@ def test_allergen_parser_only_returns_known_allergens():
 
 def test_region_extraction_preserves_spatial_boundaries():
     data = pd.DataFrame([
-        {"text": "COOKIE HEAVEN", "left": 100, "top": 100, "right": 500, "bottom": 170},
-        {"text": "INGREDIENTS:", "left": 100, "top": 500, "right": 260, "bottom": 540},
-        {"text": "Flour (46%)", "left": 100, "top": 550, "right": 300, "bottom": 590},
-        {"text": "Nutritional Information", "left": 100, "top": 900, "right": 400, "bottom": 940},
+        {"text": "COOKIE HEAVEN", "left": 100, "top": 100, "right": 500, "bottom": 170, "width": 400, "height": 70, "conf": 0.95},
+        {"text": "INGREDIENTS:", "left": 100, "top": 500, "right": 260, "bottom": 540, "width": 160, "height": 40, "conf": 0.95},
+        {"text": "Flour (46%)", "left": 100, "top": 550, "right": 300, "bottom": 590, "width": 200, "height": 40, "conf": 0.95},
+        {"text": "Nutritional Information", "left": 100, "top": 900, "right": 400, "bottom": 940, "width": 300, "height": 40, "conf": 0.95},
     ])
     region = {"x": 80, "y": 480, "w": 400, "h": 300}
     text = extract_text_from_region(data, region)
     assert text.splitlines() == ["INGREDIENTS:", "Flour (46%)"]
 
 
-def test_food_parsers_do_not_use_unrelated_global_ocr():
+def test_food_parsers_are_section_scoped():
     ingredient_section = "INGREDIENTS: Wheat Flour, Sugar, Salt"
     allergen_section = "Allergen: Contains Wheat, Milk"
-    global_text = (
+    unrelated_global_text = (
         "The clinking of chai cups and the crunch of snacktime\n"
         "The finest cookies for sharing with your loved ones.\n"
-        "May contain The clinking of chai cups\n"
-        "Ingredients: should not be trusted when outside the selected section."
+        "May contain The clinking of chai cups"
     )
-    ingredients = parse_ingredients(ingredient_section)
-    contains, may = parse_allergens(allergen_section)
-    assert ingredients == ["Wheat Flour", "Sugar", "Salt"]
-    assert contains == ["Wheat", "Milk"]
-    assert may == []
-    assert global_text not in ingredient_section
-    assert global_text not in allergen_section
+
+    assert parse_ingredients(ingredient_section) == [
+        "Wheat Flour",
+        "Sugar",
+        "Salt",
+    ]
+    assert parse_allergens(allergen_section) == (
+        ["Wheat", "Milk"],
+        [],
+    )
+    assert unrelated_global_text not in ingredient_section
+    assert unrelated_global_text not in allergen_section
