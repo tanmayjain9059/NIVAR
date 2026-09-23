@@ -86,8 +86,6 @@ def parse_ingredients(text: str) -> list[str]:
         if re.fullmatch(r"[\d\s%./:+\-]+", item):
             continue
 
-        # Ingredient declarations can legitimately contain parenthesized
-        # percentages and additive codes such as INS 503(ii).
         if sum(char.isalpha() for char in item) < 2:
             continue
 
