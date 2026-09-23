@@ -310,6 +310,17 @@ def _explicit_candidates(ocr_data):
     return products, brands
 
 
+def _row_box_dimensions(row):
+    try:
+        left = float(row["left"])
+        top = float(row["top"])
+        right = float(row["right"])
+        bottom = float(row["bottom"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return left, top, right, bottom
+
+
 def _front_candidates(ocr_data):
     rows = _rows(ocr_data)
 
@@ -476,6 +487,23 @@ def identify_product(
         if product_candidates
         else None
     )
+
+    # A caller may provide a clean single OCR row without a front-panel
+    # heuristic being applicable. Preserve that as explicit evidence.
+    if selected is None and ocr_data is not None:
+        rows = _rows(ocr_data)
+        if len(rows) == 1:
+            row = rows[0]
+            text = _clean(row.get("text"))
+            candidate = _candidate(
+                text,
+                row,
+                source="single_row_ocr_fallback",
+                front=False,
+            )
+            if candidate:
+                selected = candidate
+                product_candidates.append(candidate)
 
     brand = (
         max(
