@@ -1,4 +1,4 @@
-"""Evidence-based product identity extraction for packaged-food labels."""
+"""Evidence-based product and brand identity extraction for packaged foods."""
 
 import re
 from typing import Any
@@ -61,7 +61,7 @@ FOOD_WORDS = re.compile(
 MARKETING_RE = re.compile(
     r"\b(?:everyone|gathered|moments|warmth|finest|first\s+bite|"
     r"last\s+crumb|heaven|sharing|loved\s+ones|discover|range|baked|"
-    r"buttery|meant\s+for)\b",
+    r"buttery|meant\s+for|clinking|crunch|snacktime)\b",
     re.I,
 )
 
@@ -141,11 +141,10 @@ def _score(
     if FOOD_WORDS.search(value):
         score += 55
     else:
-        # Product names can be coined names, so absence of a food vocabulary
-        # match is not a rejection.
         score += 5
 
     word_count = len(value.split())
+
     if 1 <= word_count <= 5:
         score += 12
     elif word_count > 8:
@@ -240,6 +239,7 @@ def _explicit_candidates(ocr_data):
                 source="explicit_product_label",
                 front=True,
             )
+
             if candidate:
                 products.append(candidate)
 
@@ -252,6 +252,7 @@ def _explicit_candidates(ocr_data):
                 source="explicit_brand_label",
                 front=True,
             )
+
             if candidate:
                 brands.append(candidate)
 
@@ -264,6 +265,7 @@ def _explicit_candidates(ocr_data):
                 source="manufacturer_entity",
                 front=False,
             )
+
             if candidate:
                 brands.append(candidate)
 
@@ -363,14 +365,13 @@ def _joined_front_candidates(ocr_data):
             left_center = (left["top"] + left["bottom"]) / 2
             right_center = (right["top"] + right["bottom"]) / 2
 
-            if abs(left_center - right_center) > max(
+            height_limit = max(
                 0.7 * max(left["height"], right["height"]),
                 24,
-            ):
-                if right["top"] - left["top"] > max(
-                    0.7 * max(left["height"], right["height"]),
-                    24,
-                ):
+            )
+
+            if abs(left_center - right_center) > height_limit:
+                if right["top"] - left["top"] > height_limit:
                     break
                 continue
 
@@ -401,7 +402,10 @@ def _joined_front_candidates(ocr_data):
     return candidates
 
 
-def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
+def identify_product(
+    raw_text: str,
+    ocr_data=None,
+) -> dict[str, Any]:
     explicit_products, explicit_brands = _explicit_candidates(ocr_data)
 
     if explicit_products:
@@ -427,13 +431,19 @@ def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
                 product_candidates.append(candidate)
 
     selected = (
-        max(product_candidates, key=lambda item: item["score"])
+        max(
+            product_candidates,
+            key=lambda item: item["score"],
+        )
         if product_candidates
         else None
     )
 
     brand = (
-        max(explicit_brands, key=lambda item: item["confidence"])
+        max(
+            explicit_brands,
+            key=lambda item: item["confidence"],
+        )
         if explicit_brands
         else None
     )
@@ -445,19 +455,35 @@ def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
     )[:12]
 
     return {
-        "product_name": selected["value"] if selected else None,
+        "product_name": (
+            selected["value"]
+            if selected
+            else None
+        ),
         "product_name_confidence": (
-            selected["confidence"] if selected else None
+            selected["confidence"]
+            if selected
+            else None
         ),
         "product_name_evidence": (
-            selected["evidence"] if selected else None
+            selected["evidence"]
+            if selected
+            else None
         ),
-        "brand": brand["value"] if brand else None,
+        "brand": (
+            brand["value"]
+            if brand
+            else None
+        ),
         "brand_confidence": (
-            brand["confidence"] if brand else None
+            brand["confidence"]
+            if brand
+            else None
         ),
         "brand_evidence": (
-            brand["evidence"] if brand else None
+            brand["evidence"]
+            if brand
+            else None
         ),
         "product_name_candidates": candidates,
         "brand_candidates": explicit_brands[:5],
