@@ -1,399 +1,80 @@
-"""
-Nutrition table extraction from packaged-food labels.
-"""
-
+"""Geometry-aware nutrition extraction with safe text fallback."""
 import re
 
+NUTRIENTS=["Energy","Protein","Carbohydrate","Total Sugars","Added Sugars","Dietary Fiber","Total Fat","Saturated Fat","Trans Fat","Cholesterol","Sodium"]
 
-NUTRIENTS = [
-    "Energy",
-    "Protein",
-    "Carbohydrate",
-    "Total Sugars",
-    "Added Sugars",
-    "Dietary Fiber",
-    "Total Fat",
-    "Saturated Fat",
-    "Trans Fat",
-    "Cholesterol",
-    "Sodium",
-]
-
-
-def _clean_text(text):
-    return re.sub(
-        r"[^a-z]",
-        "",
-        str(text).lower(),
-    )
-
-
-def _is_number_line(text):
-    """
-    Return numeric values if the line represents a
-    nutrition value rather than a percentage/RDA line.
-    """
-
-    text = str(text).strip()
-
-    if "%" in text:
-        return []
-
-    matches = re.findall(
-        r"(?<![a-zA-Z])\d+(?:\.\d+)?",
-        text,
-    )
-
-    return [
-        float(value)
-        for value in matches
-    ]
-
-
-def _is_nutrient_label(text, nutrient):
-    """
-    Check whether an OCR text item represents a nutrient label.
-    """
-
-    cleaned_line = _clean_text(text)
-    target = _clean_text(nutrient)
-
-    if cleaned_line == target:
-        return True
-
-    if cleaned_line.startswith(target):
-
-        remainder = cleaned_line[len(target):]
-
-        if remainder in (
-            "",
-            "g",
-            "mg",
-            "kcal",
-            "g100g",
-            "mg100g",
-        ):
-            return True
-
-        if (
-            "g" in remainder
-            or "mg" in remainder
-            or "kcal" in remainder
-        ):
-            return True
-
+def _clean(x): return re.sub(r"[^a-z]","",str(x or "").lower())
+def _unit(n): return "kcal" if n=="Energy" else ("mg" if n in {"Sodium","Cholesterol"} else "g")
+def _numbers(x): return [float(v) for v in re.findall(r"(?<![A-Za-z])\d+(?:\.\d+)?",str(x or ""))]
+def _label(x,n):
+    a,b=_clean(x),_clean(n)
+    if a==b: return True
+    if a.startswith(b): return a[len(b):] in {"g","mg","kcal","g100g","mg100g","kcal100g"}
     return False
 
-
-def _get_unit(nutrient):
-    """
-    Return the standard unit used by our structured result.
-    """
-
-    if nutrient == "Energy":
-        return "kcal"
-
-    if nutrient in (
-        "Sodium",
-        "Cholesterol",
-    ):
-        return "mg"
-
-    return "g"
-
-
-def _extract_spatial_nutrition(ocr_data):
-    """
-    Extract nutrition values using OCR bounding boxes.
-
-    A nutrient label is matched with the closest numeric OCR
-    value on the same horizontal row.
-
-    This prevents values from neighbouring rows being assigned
-    to the wrong nutrient.
-    """
-
-    if ocr_data is None:
-        return {}
-
-    if getattr(ocr_data, "empty", True):
-        return {}
-
-    rows = []
-
-    for _, row in ocr_data.iterrows():
-
-        text = str(row.get("text", "")).strip()
-
-        if not text:
-            continue
-
+def _rows(df):
+    if df is None or getattr(df,"empty",True): return []
+    out=[]
+    for _,r in df.iterrows():
+        text=str(r.get("text","")).strip()
+        if not text: continue
         try:
-            left = float(row["left"])
-            top = float(row["top"])
-            right = float(row["right"])
-            bottom = float(row["bottom"])
-            confidence = float(row["conf"])
-        except (
-            KeyError,
-            TypeError,
-            ValueError,
-        ):
-            continue
+            left,top,right,bottom=map(float,(r["left"],r["top"],r["right"],r["bottom"]))
+        except (KeyError,TypeError,ValueError): continue
+        out.append({"text":text,"left":left,"top":top,"right":right,"bottom":bottom,"cx":(left+right)/2,"cy":(top+bottom)/2,"h":max(1,bottom-top)})
+    return out
 
-        rows.append(
-            {
-                "text": text,
-                "left": left,
-                "top": top,
-                "right": right,
-                "bottom": bottom,
-                "center_x": (left + right) / 2,
-                "center_y": (top + bottom) / 2,
-                "confidence": confidence,
-            }
-        )
+def _same_row(a,b):
+    overlap=min(a["bottom"],b["bottom"])-max(a["top"],b["top"])
+    return overlap>=.2*min(a["h"],b["h"]) or abs(a["cy"]-b["cy"])<=max(.55*max(a["h"],b["h"]),25)
 
-    if not rows:
-        return {}
-
-    results = {}
-
-    ordered_nutrients = sorted(
-        NUTRIENTS,
-        key=lambda item: len(_clean_text(item)),
-        reverse=True,
-    )
-
-    for nutrient in ordered_nutrients:
-
-        labels = [
-            row
-            for row in rows
-            if _is_nutrient_label(
-                row["text"],
-                nutrient,
-            )
-        ]
-
-        if not labels:
-            continue
-
-        # Use the first occurrence of the nutrient.
-        label = labels[0]
-
-        candidates = []
-
+def _spatial(df):
+    rows=_rows(df); result={}
+    for nutrient in sorted(NUTRIENTS,key=len,reverse=True):
+        labels=[r for r in rows if _label(r["text"],nutrient)]
+        if not labels: continue
+        label=labels[0]
+        inline=re.search(re.escape(nutrient)+r"[^0-9]{0,20}(\d+(?:\.\d+)?)",label["text"],re.I)
+        if inline:
+            result[nutrient]={"value":float(inline.group(1)),"unit":_unit(nutrient)}; continue
+        candidates=[]
         for row in rows:
+            if row is label or row["left"]<label["right"]-5 or not _numbers(row["text"]) or not _same_row(label,row): continue
+            # A percentage token is allowed only when a non-percentage value is also present.
+            if "%" in row["text"] and len(_numbers(row["text"]))==1: continue
+            gap=row["left"]-label["right"]
+            if gap>max(4*label["h"],120): continue
+            candidates.append((abs(row["cy"]-label["cy"])*4+gap,row))
+        if candidates:
+            _,row=min(candidates,key=lambda x:x[0])
+            result[nutrient]={"value":_numbers(row["text"])[0],"unit":_unit(nutrient)}
+    return result
 
-            # The candidate must contain a numeric value.
-            values = _is_number_line(row["text"])
-
-            if not values:
-                continue
-
-            # Ignore percentages / RDA values.
-            if "%" in row["text"]:
-                continue
-
-            # The value should normally be to the right
-            # of the nutrient label.
-            if row["left"] < label["right"] - 20:
-                continue
-
-            # Calculate vertical distance between the centres
-            # of the nutrient label and candidate value.
-            vertical_distance = abs(
-                row["center_y"] - label["center_y"]
-            )
-
-            # Same-row values should be reasonably close.
-            max_vertical_distance = max(
-                120.0,
-                (label["bottom"] - label["top"]) * 1.5,
-            )
-
-            if vertical_distance > max_vertical_distance:
-                continue
-
-            horizontal_distance = (
-                row["left"] - label["right"]
-            )
-
-            candidates.append(
-                (
-                    vertical_distance,
-                    horizontal_distance,
-                    row,
-                    values,
-                )
-            )
-
-        if not candidates:
-            continue
-
-        # Prioritize same-row alignment first,
-        # then horizontal proximity.
-        candidates.sort(
-            key=lambda item: (
-                item[0],
-                item[1],
-            )
-        )
-
-        _, _, selected_row, values = candidates[0]
-
-        results[nutrient] = {
-            "value": values[0],
-            "unit": _get_unit(nutrient),
-        }
-
-    return results
-
-
-def parse_nutrition_text(text, ocr_data=None):
-    """
-    Parse nutrition values from OCR text.
-
-    When PaddleOCR dataframe information is available,
-    spatial extraction is preferred.
-
-    The text-only implementation remains as a fallback
-    for Tesseract and other callers.
-    """
-
-    if not text:
-        return {}
-
-    # --------------------------------------------------------
-    # Prefer spatial OCR when available.
-    # --------------------------------------------------------
-
-    if ocr_data is not None:
-        spatial_results = _extract_spatial_nutrition(
-            ocr_data
-        )
-
-        if spatial_results:
-            return spatial_results
-
-    # --------------------------------------------------------
-    # Existing text-based fallback.
-    # --------------------------------------------------------
-
-    lines = [
-        line.strip()
-        for line in str(text).splitlines()
-        if line.strip()
-    ]
-
-    results = {}
-
-    ordered_nutrients = sorted(
-        NUTRIENTS,
-        key=lambda item: len(_clean_text(item)),
-        reverse=True,
-    )
-
-    for index, line in enumerate(lines):
-
-        matched_nutrient = None
-
-        for nutrient in ordered_nutrients:
-
-            if _is_nutrient_label(
-                line,
-                nutrient,
-            ):
-                matched_nutrient = nutrient
-                break
-
-        if matched_nutrient is None:
-            continue
-
-        values = _is_number_line(line)
-
-        values = [
-            value
-            for value in values
-            if value >= 0
-        ]
-
-        value = None
-
+def parse_nutrition_text(text,ocr_data=None):
+    if not text: return {}
+    spatial=_spatial(ocr_data) if ocr_data is not None else {}
+    if spatial: return spatial
+    lines=[x.strip() for x in str(text).splitlines() if x.strip()]
+    result={}
+    ordered=sorted(NUTRIENTS,key=len,reverse=True)
+    for i,line in enumerate(lines):
+        n=next((x for x in ordered if _label(line,x)),None)
+        if not n: continue
+        values=_numbers(line)
+        # Remove trailing RDA percentages when another value exists.
+        if "%" in line and len(values)>1: values=values[:1]
         if not values:
+            for nxt in lines[i+1:i+3]:
+                if any(_label(nxt,o) for o in ordered if o!=n): break
+                values=_numbers(nxt)
+                if values: break
+        if values: result[n]={"value":values[0],"unit":_unit(n)}
+    return result
 
-            for next_index in range(
-                index + 1,
-                min(index + 3, len(lines)),
-            ):
-
-                candidate_line = lines[next_index]
-
-                candidate_cleaned = _clean_text(
-                    candidate_line
-                )
-
-                is_another_nutrient = any(
-                    candidate_cleaned == _clean_text(other)
-                    or candidate_cleaned.startswith(
-                        _clean_text(other)
-                    )
-                    for other in NUTRIENTS
-                    if other != matched_nutrient
-                )
-
-                if is_another_nutrient:
-                    break
-
-                candidate_values = _is_number_line(
-                    candidate_line
-                )
-
-                if candidate_values:
-                    value = candidate_values[0]
-                    break
-
-        else:
-            value = values[0]
-
-        if value is None:
-            continue
-
-        results[matched_nutrient] = {
-            "value": value,
-            "unit": _get_unit(
-                matched_nutrient
-            ),
-        }
-
-    return results
-
-
-def parse_nutrition_table(roi, config):
-    """
-    Backward-compatible Tesseract implementation.
-
-    PaddleOCR should use parse_nutrition_text().
-    """
-
-    if roi is None:
-        return {}
-
+def parse_nutrition_table(roi,config):
+    if roi is None: return {}
     import pytesseract
-
-    from src.ocr.preprocessing import (
-        prepare_roi_for_ocr,
-    )
-
-    cleaned = prepare_roi_for_ocr(
-        roi,
-        config,
-    )
-
-    text = pytesseract.image_to_string(
-        cleaned,
-        config=config["roi_ocr_config"],
-    )
-
+    from src.ocr.preprocessing import prepare_roi_for_ocr
+    cleaned=prepare_roi_for_ocr(roi,config)
+    text=pytesseract.image_to_string(cleaned,config=config["roi_ocr_config"])
     return parse_nutrition_text(text)
