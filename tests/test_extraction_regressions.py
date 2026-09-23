@@ -117,3 +117,61 @@ def test_product_name_is_not_manufacturer_address_or_nutrition_noise():
         ocr_data=ocr,
     )
     assert result["product_name"] is None
+
+
+def test_ingredient_parser_does_not_absorb_marketing_copy():
+    text = (
+        "INGREDIENTS: Refined Wheat Flour (Maida) (46%), "
+        "Hydrogenated Vegetable Oils (Palm, Soyabean, Sunflower), "
+        "Milk Solids, Refined Sugar, Butter, Whole Cumin (1.3%), "
+        "Iodised Salt, Custard Powder, Natural Flavouring Substances "
+        "(Cumin), Acidity Regulators (INS 503 (ii)) and Natural Flavouring "
+        "Substances (Vanilla). Nutritional Information Energy 513 kcal"
+    )
+    result = parse_ingredients(text)
+    assert any("Refined Wheat Flour" in item for item in result)
+    assert any("Hydrogenated Vegetable Oils" in item for item in result)
+    assert all("first bite" not in item.lower() for item in result)
+    assert all("clinking" not in item.lower() for item in result)
+    assert all("nutritional information" not in item.lower() for item in result)
+
+
+def test_allergen_parser_only_returns_known_allergens():
+    text = (
+        "Allergen: Contains Wheat, Milk & Soy. "
+        "May Contains Tree Nuts, Peanut, Sesame Seed & Mustard Seed. "
+        "Added Sugars (g) 11"
+    )
+    contains, may = parse_allergens(text)
+    assert contains == ["Wheat", "Milk", "Soy"]
+    assert may == ["Tree Nuts", "Peanut", "Sesame", "Mustard"]
+
+
+def test_region_extraction_preserves_spatial_boundaries():
+    data = pd.DataFrame([
+        {"text": "COOKIE HEAVEN", "left": 100, "top": 100, "right": 500, "bottom": 170},
+        {"text": "INGREDIENTS:", "left": 100, "top": 500, "right": 260, "bottom": 540},
+        {"text": "Flour (46%)", "left": 100, "top": 550, "right": 300, "bottom": 590},
+        {"text": "Nutritional Information", "left": 100, "top": 900, "right": 400, "bottom": 940},
+    ])
+    region = {"x": 80, "y": 480, "w": 400, "h": 300}
+    text = extract_text_from_region(data, region)
+    assert text.splitlines() == ["INGREDIENTS:", "Flour (46%)"]
+
+
+def test_food_parsers_do_not_use_unrelated_global_ocr():
+    ingredient_section = "INGREDIENTS: Wheat Flour, Sugar, Salt"
+    allergen_section = "Allergen: Contains Wheat, Milk"
+    global_text = (
+        "The clinking of chai cups and the crunch of snacktime\n"
+        "The finest cookies for sharing with your loved ones.\n"
+        "May contain The clinking of chai cups\n"
+        "Ingredients: should not be trusted when outside the selected section."
+    )
+    ingredients = parse_ingredients(ingredient_section)
+    contains, may = parse_allergens(allergen_section)
+    assert ingredients == ["Wheat Flour", "Sugar", "Salt"]
+    assert contains == ["Wheat", "Milk"]
+    assert may == []
+    assert global_text not in ingredient_section
+    assert global_text not in allergen_section
