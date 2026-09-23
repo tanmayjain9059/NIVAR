@@ -237,3 +237,54 @@ def test_compliance_recovers_compact_month_date_from_ocr():
     ])
     result = validate_declarations("", "", ocr_data=ocr)
     assert result["checks"]["manufacture_date"]["status"] == "FOUND"
+
+
+def test_compliance_reconstructs_split_paddle_ocr_line_tokens():
+    """A declaration value may be emitted as several adjacent OCR boxes."""
+    ocr = pd.DataFrame([
+        {"text": "Marketed by:", "left": 100, "top": 100, "right": 220, "bottom": 130, "conf": 0.99},
+        {"text": "Unibic Foods India Private Limited,", "left": 225, "top": 100, "right": 580, "bottom": 130, "conf": 0.98},
+        {"text": "#13, 2nd Floor, HAL 2nd Stage, 100 Feet Road, Bengaluru - 560038", "left": 100, "top": 140, "right": 650, "bottom": 170, "conf": 0.97},
+        {"text": "BISCUITS NET WEIGHT:", "left": 100, "top": 250, "right": 300, "bottom": 280, "conf": 0.98},
+        {"text": "67.5", "left": 320, "top": 250, "right": 370, "bottom": 280, "conf": 0.98},
+        {"text": "g", "left": 375, "top": 250, "right": 395, "bottom": 280, "conf": 0.98},
+        {"text": "MRP", "left": 100, "top": 320, "right": 160, "bottom": 350, "conf": 0.98},
+        {"text": "₹", "left": 320, "top": 320, "right": 340, "bottom": 350, "conf": 0.98},
+        {"text": "60.00", "left": 345, "top": 320, "right": 410, "bottom": 350, "conf": 0.98},
+        {"text": "MFG. DATE:", "left": 100, "top": 390, "right": 230, "bottom": 420, "conf": 0.98},
+        {"text": "28/07/2026", "left": 320, "top": 390, "right": 450, "bottom": 420, "conf": 0.97},
+        {"text": "For any feedback, please contact the Consumer Care Executive", "left": 100, "top": 500, "right": 650, "bottom": 530, "conf": 0.98},
+        {"text": "Tel. No. +91 96061 22221", "left": 100, "top": 540, "right": 360, "bottom": 570, "conf": 0.98},
+    ])
+
+    result = validate_declarations("", "", ocr_data=ocr)
+    checks = result["checks"]
+
+    assert checks["manufacturer_packer_importer"]["status"] == "FOUND"
+    assert checks["manufacturer_packer_importer"]["manufacturer_name"] == "Unibic Foods India Private Limited"
+    assert checks["net_quantity"]["status"] == "FOUND"
+    assert checks["manufacture_date"]["status"] == "FOUND"
+    assert checks["mrp"]["status"] == "FOUND"
+    assert checks["consumer_care"]["status"] == "FOUND"
+
+
+def test_compliance_supports_month_year_manufacture_date():
+    ocr = pd.DataFrame([
+        {"text": "MFG. DATE", "left": 100, "top": 100, "right": 240, "bottom": 130, "conf": 0.98},
+        {"text": "08/2026", "left": 260, "top": 100, "right": 360, "bottom": 130, "conf": 0.97},
+    ])
+
+    result = validate_declarations("", "", ocr_data=ocr)
+
+    assert result["checks"]["manufacture_date"]["status"] == "FOUND"
+
+
+def test_compliance_mrp_uses_declared_price_not_unit_price():
+    text = "MRP (Inclusive of All Taxes) Rs 60.00 Rs 0.89 per g"
+
+    result = validate_declarations(text)
+
+    check = result["checks"]["mrp"]
+    assert check["status"] == "FOUND"
+    assert check["matched_text"].lower().find("60.00") >= 0
+    assert "0.89" not in check["matched_text"]
