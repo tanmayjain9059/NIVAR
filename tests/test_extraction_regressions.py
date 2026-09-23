@@ -23,6 +23,7 @@ def test_compliance_same_line_values_are_preserved():
     text = (
         "Manufactured by ABC Foods Pvt Ltd\n"
         "Net Quantity 500 g\n"
+        "Plot 12, Industrial Area, Hyderabad - 500001\n"
         "MFD 14/08/2026\n"
         "MRP ₹120\n"
         "Consumer Care 1800 123 4567"
@@ -37,6 +38,8 @@ def test_compliance_same_line_values_are_preserved():
         "consumer_care",
     ):
         assert checks[key]["status"] == "FOUND"
+    assert checks["manufacturer_packer_importer"]["manufacturer_name"] == "ABC Foods Pvt Ltd"
+    assert checks["manufacturer_packer_importer"]["address_detected"] is True
 
 
 def test_multi_image_fusion_does_not_drop_food_fields():
