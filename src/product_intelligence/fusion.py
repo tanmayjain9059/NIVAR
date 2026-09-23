@@ -13,19 +13,76 @@ def _conf(v):
 
 def _choose(candidates):
     valid=[c for c in candidates if c.get("value")]
-    if not valid: return {"value":None,"confidence":None,"evidence":None,"support_count":0,"conflict":False}
+    if not valid:
+        return {"value":None,"confidence":None,"evidence":None,"support_count":0,"conflict":False}
     groups=defaultdict(list)
     for c in valid: groups[_norm(c["value"])].append(c)
     ranked=[]
     for key,group in groups.items():
         strongest=max(group,key=lambda x:_conf(x.get("confidence")))
         avg=sum(_conf(x.get("confidence")) for x in group)/len(group)
-        ranked.append({"value":strongest["value"],"confidence":min(1,avg+min(.1,(len(group)-1)*.025)),"evidence":strongest.get("evidence"),"support_count":len(group),"normalized":key})
+        ranked.append({
+            "value":strongest["value"],
+            "confidence":min(1,avg+min(.1,(len(group)-1)*.025)),
+            "evidence":strongest.get("evidence"),
+            "support_count":len(group),
+            "normalized":key,
+        })
     ranked.sort(key=lambda x:(x["support_count"],x["confidence"]),reverse=True)
     winner=ranked[0]
     winner["conflict"]=len(ranked)>1
     if winner["conflict"]: winner["alternatives"]=ranked[1:4]
     return winner
+
+def _merge_lists(image_results,key):
+    values=[]
+    for result in image_results:
+        value=result.get(key)
+        if isinstance(value,list):
+            values.extend(value)
+    out=[]
+    seen=set()
+    for value in values:
+        normalized=_norm(value)
+        if normalized and normalized not in seen:
+            seen.add(normalized); out.append(value)
+    return out
+
+def _merge_allergens(image_results):
+    contains=_merge_lists(image_results,"_contains")
+    may=_merge_lists(image_results,"_may_contain")
+    for result in image_results:
+        allergens=result.get("allergens")
+        if isinstance(allergens,dict):
+            contains.extend(allergens.get("contains") or [])
+            may.extend(allergens.get("may_contain") or [])
+    def unique(values):
+        out=[]; seen=set()
+        for value in values:
+            k=_norm(value)
+            if k and k not in seen: seen.add(k); out.append(value)
+        return out
+    return {"contains":unique(contains),"may_contain":unique(may)}
+
+def _merge_nutrition(image_results):
+    merged={}
+    candidates=defaultdict(list)
+    for result in image_results:
+        nutrition=result.get("nutrition")
+        if not isinstance(nutrition,dict): continue
+        for nutrient,item in nutrition.items():
+            if isinstance(item,dict) and item.get("value") is not None:
+                candidates[nutrient].append(item)
+    for nutrient,items in candidates.items():
+        # Prefer the first value when images agree; otherwise retain the
+        # strongest available value and expose the disagreement.
+        normalized={_norm(i.get("value")) for i in items}
+        chosen=max(items,key=lambda i:_conf(i.get("confidence",1)))
+        merged[nutrient]={"value":chosen.get("value"),"unit":chosen.get("unit")}
+        if len(normalized)>1:
+            merged[nutrient]["conflict"]=True
+            merged[nutrient]["alternatives"]=[{"value":i.get("value"),"unit":i.get("unit")} for i in items if i is not chosen]
+    return merged
 
 def _merge_checks(results):
     keys=set()
@@ -45,9 +102,8 @@ def _merge_checks(results):
         pool=found or review or missing
         selected=max(pool,key=lambda x:_conf((x.get("evidence") or {}).get("confidence"))) if found else pool[0]
         merged[key]=deepcopy(selected)
-        merged[key]["source_images"]=[x["_image_id"] for x in pool]
+        merged[key]["source_images"]=[x["_image_id"] for x in pool if x.get("_image_id")]
         merged[key]["support_count"]=len(pool)
-        # Preserve disagreement instead of silently hiding it.
         values={_norm((x.get("evidence") or {}).get("value") or x.get("value")) for x in found if (x.get("evidence") or {}).get("value") or x.get("value")}
         if len(values)>1:
             merged[key]["conflict"]=True
@@ -79,4 +135,19 @@ def fuse_image_analyses(image_results:list[dict[str,Any]])->dict[str,Any]:
     compliance=deepcopy(compliance_sources[0]) if compliance_sources else {}
     compliance["checks"]=_merge_checks(image_results)
     compliance=_overall(compliance)
-    return {"product_name":pi["value"],"product_name_confidence":pi["confidence"],"product_name_evidence":pi["evidence"],"brand":bi["value"],"brand_confidence":bi["confidence"],"brand_evidence":bi["evidence"],"images_analyzed":len(image_results),"images":[{"image_id":r.get("_image_id"),"filename":r.get("_filename"),"analysis":{k:v for k,v in r.items() if not k.startswith("_")}} for r in image_results],"legal_metrology_compliance":compliance,"fusion":{"strategy":"cross_image_evidence_fusion","source_image_count":len(image_results),"product_identity_conflict":pi.get("conflict",False),"brand_conflict":bi.get("conflict",False)}}
+    allergens=_merge_allergens(image_results)
+    return {
+        "product_name":pi["value"],"product_name_confidence":pi["confidence"],"product_name_evidence":pi["evidence"],
+        "brand":bi["value"],"brand_confidence":bi["confidence"],"brand_evidence":bi["evidence"],
+        "ingredients":_merge_lists(image_results,"ingredients"),
+        "allergens":allergens,
+        "nutrition":_merge_nutrition(image_results),
+        "quantity":next((r.get("quantity") for r in image_results if r.get("quantity")),None),
+        "manufacturer":next((r.get("manufacturer") for r in image_results if r.get("manufacturer")),None),
+        "manufacturing_date":next((r.get("manufacturing_date") for r in image_results if r.get("manufacturing_date")),None),
+        "expiry_date":next((r.get("expiry_date") for r in image_results if r.get("expiry_date")),None),
+        "images_analyzed":len(image_results),
+        "images":[{"image_id":r.get("_image_id"),"filename":r.get("_filename"),"analysis":{k:v for k,v in r.items() if not k.startswith("_")}} for r in image_results],
+        "legal_metrology_compliance":compliance,
+        "fusion":{"strategy":"cross_image_evidence_fusion","source_image_count":len(image_results),"product_identity_conflict":pi.get("conflict",False),"brand_conflict":bi.get("conflict",False)},
+    }
