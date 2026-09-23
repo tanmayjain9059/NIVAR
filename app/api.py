@@ -583,4 +583,4 @@ def get_scan_report(
 # Production frontend assets. API routes above keep their /api/* paths.
 frontend_dist = Path("frontend/dist")
 if frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")\n
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
