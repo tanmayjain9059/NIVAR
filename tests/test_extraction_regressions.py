@@ -85,3 +85,35 @@ def test_manufacturer_selection_prefers_company_name_over_address():
     value = result["manufacturer_packer_importer"]["matched_text"]
     assert "ABC Foods Pvt Ltd" in value
     assert "Industrial Area" not in value
+
+
+def test_product_name_prefers_explicit_food_name_over_brand_and_manufacturer():
+    from src.product_intelligence.identity import identify_product
+
+    ocr = pd.DataFrame([
+        {"text": "ACME", "left": 100, "top": 40, "right": 260, "bottom": 100, "conf": 96},
+        {"text": "Premium Basmati Rice", "left": 110, "top": 125, "right": 520, "bottom": 180, "conf": 94},
+        {"text": "Manufactured by ABC Foods Pvt Ltd", "left": 100, "top": 1500, "right": 650, "bottom": 1540, "conf": 97},
+        {"text": "Net Quantity 5 kg", "left": 100, "top": 1600, "right": 350, "bottom": 1640, "conf": 96},
+    ])
+    result = identify_product(
+        "ACME\\nPremium Basmati Rice\\nManufactured by ABC Foods Pvt Ltd",
+        ocr_data=ocr,
+    )
+    assert result["product_name"] == "Premium Basmati Rice"
+
+
+def test_product_name_is_not_manufacturer_address_or_nutrition_noise():
+    from src.product_intelligence.identity import identify_product
+
+    ocr = pd.DataFrame([
+        {"text": "ABC Foods Pvt Ltd", "left": 100, "top": 1400, "right": 400, "bottom": 1440, "conf": 98},
+        {"text": "Plot 12 Industrial Area Hyderabad", "left": 100, "top": 1450, "right": 520, "bottom": 1490, "conf": 98},
+        {"text": "Energy 412 kcal", "left": 100, "top": 900, "right": 350, "bottom": 940, "conf": 99},
+        {"text": "Protein 9 g", "left": 100, "top": 950, "right": 300, "bottom": 990, "conf": 99},
+    ])
+    result = identify_product(
+        "ABC Foods Pvt Ltd\\nPlot 12 Industrial Area Hyderabad\\nEnergy 412 kcal\\nProtein 9 g",
+        ocr_data=ocr,
+    )
+    assert result["product_name"] is None
