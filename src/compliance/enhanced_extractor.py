@@ -138,7 +138,7 @@ def _entity_fragment(value):
 
 
 _ADDRESS_RE=re.compile(
-    r"\b(?:road|rd\.?|street|st\.?|lane|ln\.?|avenue|ave\.?|industrial\s+area|estate|plot|floor|building|bldg|sector|block|district|dist\.?|taluka|tehsil|village|nagar|colony|pin(?:code)?|postcode|zip|near|opp\.?|opposite|phase|highway|city|state)\b",
+    r"\b(?:road|rd\.?|street|st\.?|lane|ln\.?|avenue|ave\.?|industrial\s+area|estate|plot|floor|building|bldg|sector|block|district|dist\.?|taluka|tehsil|village|nagar|colony|pin(?:code)?|postcode|zip|near|opp\.?|opposite|phase|highway|city|state|scheme|survey|no\.?)\b",
     re.I,
 )
 
