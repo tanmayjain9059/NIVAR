@@ -1,84 +1,94 @@
-"""
-Conservative allergen declaration extraction.
-
-The parser is intentionally line/section bounded so a declaration such
-as "Contains Wheat & Sulphite" cannot consume an address or phone number
-that follows it in noisy OCR.
-"""
+"""Conservative allergen declaration extraction."""
 
 import re
 
+_DECL = re.compile(
+    r"\b(may\s+contain(?:s)?|contains)\b\s*([^.!?\n]+)",
+    re.I,
+)
 
-_STOP_RE = re.compile(
-    r"\b(?:manufactured|packed|marketed|imported|"
-    r"customer\s+care|consumer\s+care|"
-    r"address|phone|tel|toll[-\s]?free|www\.|"
-    r"ingredients?|nutrition|nutritional|"
-    r"mrp|net\s*(?:qty|quantity)|batch|"
-    r"best\s+before|use\s+by|expiry)\b",
-    re.IGNORECASE,
+_STOP = re.compile(
+    r"\b(?:manufactured|packed|marketed|imported|customer\s+care|"
+    r"consumer\s+care|address|phone|tel|toll[-\s]?free|www\.|ingredients?|"
+    r"nutrition|nutritional|mrp|net\s*(?:qty|quantity)|batch|best\s+before|"
+    r"use\s+by|expiry)\b",
+    re.I,
+)
+
+_ALLOWED = {
+    "wheat": "Wheat",
+    "milk": "Milk",
+    "soy": "Soy",
+    "soya": "Soy",
+    "peanut": "Peanut",
+    "groundnut": "Peanut",
+    "sesame": "Sesame",
+    "mustard": "Mustard",
+    "tree nuts": "Tree Nuts",
+    "tree nut": "Tree Nuts",
+    "nuts": "Tree Nuts",
+    "nut": "Tree Nuts",
+    "almond": "Tree Nuts",
+    "almonds": "Tree Nuts",
+    "cashew": "Tree Nuts",
+    "cashews": "Tree Nuts",
+    "sulphite": "Sulphite",
+    "sulphites": "Sulphite",
+    "sulfite": "Sulphite",
+    "sulfites": "Sulphite",
+}
+
+_CANONICAL_PATTERNS = sorted(
+    _ALLOWED.items(),
+    key=lambda item: len(item[0]),
+    reverse=True,
 )
 
 
-def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", str(text or "")).strip()
+def _norm(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-def _items(value: str) -> list[str]:
-    value = re.sub(r"\s*&\s*", ",", value)
-    value = re.sub(r"\s+(?:and)\s+", ",", value, flags=re.IGNORECASE)
-    value = re.sub(r"[.;]+\s*$", "", value)
+def _extract_known_allergens(value: str) -> list[str]:
+    value = _norm(value).lower()
+    matches = []
 
-    items = []
-    for item in value.split(","):
-        item = _normalize(item).strip(" .;:-")
-        if len(item) >= 2 and not re.search(r"\d{3,}", item):
-            items.append(item)
-    return items
+    for alias, canonical in _CANONICAL_PATTERNS:
+        for match in re.finditer(rf"\b{re.escape(alias)}\b", value):
+            matches.append((match.start(), canonical))
 
+    found = []
+    for _, canonical in sorted(matches, key=lambda item: item[0]):
+        if canonical not in found:
+            found.append(canonical)
 
-def _bounded_value(value: str) -> str:
-    value = value.strip()
-    stop = _STOP_RE.search(value)
-    if stop:
-        value = value[:stop.start()]
-    return value.strip(" .;:-")
+    return found
 
 
-def parse_allergens(text):
+def parse_allergens(text: str) -> tuple[list[str], list[str]]:
+    normalized = _norm(text)
+
+    if not normalized:
+        return [], []
+
     contains = []
     may_contain = []
 
-    if not text:
-        return contains, may_contain
+    for match in _DECL.finditer(normalized):
+        kind = match.group(1).lower()
+        # Capture the declaration up to sentence punctuation. Keep commas,
+        # ampersands, slashes and OCR noise inside the declaration intact.
+        value = match.group(2).strip()
 
-    normalized = _normalize(text)
+        stop = _STOP.search(value)
+        if stop:
+            value = value[:stop.start()]
 
-    # Process each declaration independently. This avoids one greedy
-    # regex swallowing the rest of a noisy OCR block.
-    for match in re.finditer(
-        r"\b(?:may\s+contain|may\s+contains)\b\s*(.+?)(?="
-        r"\b(?:contains|manufactured|packed|marketed|customer\s+care|"
-        r"consumer\s+care|nutrition|ingredients?)\b|$)",
-        normalized,
-        flags=re.IGNORECASE,
-    ):
-        value = _bounded_value(match.group(1))
-        may_contain.extend(_items(value))
+        values = _extract_known_allergens(value)
 
-    for match in re.finditer(
-        r"\bcontains\b\s*(.+?)(?="
-        r"\b(?:may\s+contain|may\s+contains|manufactured|packed|"
-        r"marketed|customer\s+care|consumer\s+care|nutrition|"
-        r"ingredients?)\b|$)",
-        normalized,
-        flags=re.IGNORECASE,
-    ):
-        value = _bounded_value(match.group(1))
-        contains.extend(_items(value))
+        if kind.startswith("may"):
+            may_contain.extend(values)
+        else:
+            contains.extend(values)
 
-    # Preserve order while removing duplicates.
-    contains = list(dict.fromkeys(contains))
-    may_contain = list(dict.fromkeys(may_contain))
-
-    return contains, may_contain
+    return list(dict.fromkeys(contains)), list(dict.fromkeys(may_contain))

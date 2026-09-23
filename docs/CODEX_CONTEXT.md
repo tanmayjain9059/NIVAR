@@ -1,316 +1,340 @@
-# Codex Project Context
+# NIVAR Current Project Context
 
-This document reflects the repository state inspected on 2026-09-03. The project is for **Smart India Hackathon 2026, Problem Statement SIH26034**: a system to screen packaged commodities under the **Legal Metrology (Packaged Commodities) Rules, 2011** by scanning products, images, and labels. It is not legal advice: every compliance result is an OCR-based, first-pass screening result that requires human verification, not legal certification.
+**Updated:** 2026-09-23  
+**Branch:** `semantic-extraction-rewrite`  
+**Problem Statement:** SIH26034 — Software System to check compliance of Packaged Commodities under Legal Metrology (Packaged Commodities) Rules, 2011 by scanning products, images and labels.
 
-## Architecture
+This file records the current implementation context for future development. **Source code and tests are authoritative.**
 
-The application processes a packaged-food image through this pipeline:
+## Product goal
 
-```text
-image -> image-quality assessment -> OpenCV preprocessing -> global OCR
-      -> region detection from OCR coordinates -> food/compliance extraction
-      -> structured JSON -> FastAPI response and optional product/scan persistence
-```
+NIVAR is an evidence-aware packaged-commodity analysis platform.
 
-`app/main.py` owns orchestration. It returns the original image, processed images, detected regions/ROIs, and `structured_result`. `app/services/analyzer_service.py` is the API-facing adapter that returns only `structured_result`. `app/api.py` owns HTTP concerns and delegates persistence to `app/services/product_service.py`.
+The current system:
 
-## Repository tree
+1. accepts one or more package images;
+2. evaluates image quality;
+3. preprocesses the images;
+4. runs PaddleOCR;
+5. preserves OCR text, confidence and geometry;
+6. detects relevant label regions;
+7. extracts product identity, food-label information and Legal Metrology declarations;
+8. validates declarations using evidence-aware statuses;
+9. fuses evidence across multiple images;
+10. persists products, scans and source images;
+11. exposes the result through FastAPI;
+12. renders results through the React/Vite frontend.
 
-```text
-AGENTS.md                         repository change and verification rules
-README.md                         project overview and SIH26034 context
-requirements.txt                  Python dependencies
-main.py                           legacy/top-level entry point
-automatic_analyzer.py             legacy/top-level analyzer script
-pt1.py                            legacy/top-level experiment script
-test_paddle.py                    manual PaddleOCR smoke script
-app/
-  __init__.py                     application package marker
-  api.py                         FastAPI endpoints
-  main.py                        analysis-pipeline orchestrator
-  services/__init__.py            services package marker
-  services/analyzer_service.py   adapter to `process_image`
-  services/product_service.py    product/scan service and image storage
-src/
-  __init__.py                     source package marker
-  ocr/                           OCR engines, preprocessing, regions, normalization
-    __init__.py
-    engine.py, provider.py, paddle_engine.py, tesseract_engine.py
-    preprocessing.py, normalizer.py, regions.py
-  image_quality/quality.py       pre-OCR image acceptance checks
-  image_quality/__init__.py
-  food_analysis/                 nutrition, ingredients, allergens
-    __init__.py, nutrition.py, ingredients.py, allergens.py
-  compliance/                    Legal Metrology rules, extraction, validation
-    __init__.py, rules.py, extractor.py, validator.py
-  reporting/                     JSON output and debug visualization
-    __init__.py, json_report.py, visualization.py
-  repository/                    JSON-backed product/scan models and store
-    __init__.py, models.py, store.py
-data/
-  products.json                  current JSON repository data
-  product_images/                persistent per-product scan copies
-docs/
-  CODEX_CONTEXT.md                current developer context
-  architecture.md, api.md         currently empty placeholders
-images/                          sample image assets
-```
+NIVAR is a preliminary screening tool, not a legal certification system.
 
-## Source-of-truth inventory and status
-
-Current source code and its import/call graph are authoritative. README claims, generated output, older standalone scripts, and planned architecture are not implementation evidence.
+## Current architecture
 
 ```text
-.gitignore                         IMPLEMENTED: ignores venv, caches, results, and local images
-.DS_Store                          GENERATED: local macOS metadata
-AGENTS.md                          IMPLEMENTED: repository working rules
-README.md                          DOCUMENTATION: historical/project narrative; parts are stale
-requirements.txt                   BROKEN: tracked but empty despite runtime dependencies
-main.py                            DEBUG-ONLY: standalone manual OpenCV/Tesseract ROI script
-automatic_analyzer.py              EXPERIMENTAL: legacy standalone Tesseract analyzer
-pt1.py                             EXPERIMENTAL: separate legacy standalone Tesseract analyzer
-test_paddle.py                     DEBUG-ONLY/BROKEN: uses obsolete PaddleOCREngine return shape
-app/
-  __init__.py                      IMPLEMENTED: package marker
-  api.py                           IMPLEMENTED: active FastAPI API
-  main.py                          IMPLEMENTED: active analysis pipeline and Tkinter GUI
-  services/__init__.py             IMPLEMENTED: package marker
-  services/analyzer_service.py     IMPLEMENTED: active API-to-pipeline adapter
-  services/product_service.py      IMPLEMENTED: active product/scan service
-src/
-  __init__.py                      IMPLEMENTED: package marker
-  ocr/__init__.py                  IMPLEMENTED: package marker
-  ocr/engine.py                    IMPLEMENTED: active OCR adapter and region text filtering
-  ocr/provider.py                  IMPLEMENTED: active OCR factory
-  ocr/paddle_engine.py             IMPLEMENTED: active PaddleOCR wrapper
-  ocr/tesseract_engine.py          PARTIAL: provider-compatible wrapper, not the active Tesseract path
-  ocr/preprocessing.py             IMPLEMENTED: active preprocessing utilities
-  ocr/regions.py                   IMPLEMENTED: active coordinate-based region detection
-  ocr/normalizer.py                DEAD-OR-UNUSED: never imported or called
-  image_quality/__init__.py        IMPLEMENTED: public export
-  image_quality/quality.py         IMPLEMENTED: active pre-OCR quality gate
-  food_analysis/__init__.py        IMPLEMENTED: public exports
-  food_analysis/nutrition.py       IMPLEMENTED: active nutrition parsing
-  food_analysis/ingredients.py     IMPLEMENTED: active heuristic ingredient parsing
-  food_analysis/allergens.py       IMPLEMENTED: active regex allergen parsing
-  compliance/__init__.py           IMPLEMENTED: public exports
-  compliance/rules.py              IMPLEMENTED: configured declarations
-  compliance/extractor.py          IMPLEMENTED: active regex extraction/evidence
-  compliance/validator.py          IMPLEMENTED: active conservative validation
-  repository/__init__.py           IMPLEMENTED: package marker
-  repository/models.py             IMPLEMENTED: active dataclass models
-  repository/store.py              IMPLEMENTED: active JSON persistence
-  reporting/__init__.py            IMPLEMENTED: public exports
-  reporting/json_report.py         IMPLEMENTED: active structured-result and JSON writer
-  reporting/visualization.py       IMPLEMENTED: active debug-image writer
-data/products.json                 IMPLEMENTED runtime data; currently untracked
-data/product_images/...            IMPLEMENTED runtime storage; currently untracked
-images/                            LOCAL TEST ASSETS; currently ignored/untracked
-results/                           GENERATED/ignored output; includes JSON reports and debug ROIs
-venv/                              GENERATED/ignored local virtual environment
+Upload
+  ↓
+FastAPI
+  ↓
+Analyzer Service
+  ↓
+Image Quality
+  ↓
+OpenCV / preprocessing
+  ↓
+PaddleOCR
+  ↓
+OCR text + confidence + bbox
+  ↓
+Region detection
+  ├── Nutrition
+  ├── Ingredients
+  ├── Allergens
+  └── Compliance
+  ↓
+Semantic extraction
+  ├── Product identity
+  ├── Food analysis
+  └── Legal Metrology
+  ↓
+Multi-image evidence fusion
+  ↓
+Structured result
+  ├── API
+  └── Product repository
+        ├── Product
+        ├── Scan
+        └── Image records
 ```
 
-No backup/copy-named source files were found. Python `__pycache__/` directories are generated and ignored. The physical `results/` tree contains the generated JSON files and matching/debug ROI images enumerated by `find results -type f`; it is not source or test coverage.
+## Important implementation facts
 
-`app.api -> app.services.analyzer_service -> app.main.process_image` is the active API path. The root scripts are not imported by that path. `automatic_analyzer.py` and `pt1.py` are both legacy Tesseract analyzers but are not byte-identical.
+### OCR
 
-## OCR implementation
+- Primary OCR: PaddleOCR 3.7.0.
+- Runtime: PaddlePaddle 3.2.2.
+- OCR language codes currently supported by the API:
+  `en, hi, mr, te, ta, ka, sa, bho, mai, gom, bgc`.
+- PaddleOCR is configured with document orientation/unwarping/text-line orientation support.
+- OCR geometry is retained for evidence and spatial extraction.
+- Tesseract remains available as a secondary provider/workflow.
 
-- `app/main.py` sets `CONFIG["ocr_engine"]` to `"paddle"`.
-- `src/ocr/provider.py` creates PaddleOCR or Tesseract engines.
-- `src/ocr/paddle_engine.py` is the primary wrapper. It resizes very large input images to a maximum side of 2500 pixels for OCR, runs `PaddleOCR.predict`, and scales returned boxes back to original-image coordinates.
-- `src/ocr/engine.py` converts normalized PaddleOCR lines into a pandas DataFrame with text, confidence, and bounding-box columns. It then scales those coordinates to match the OpenCV-processed image used for region detection.
-- PaddleOCR runs globally once per image. Section text for nutrition, ingredients, allergens, and split compliance blocks is extracted from that single DataFrame with `extract_text_from_region`. Paddle ROI OCR is deliberately disabled.
-- Tesseract remains supported as the secondary engine. It runs global OCR with `global_ocr_config` and can perform direct ROI OCR with `roi_ocr_config`.
+Do not change the PaddleOCR/PaddlePaddle versions casually while extraction behavior is being stabilized.
 
-### Actual PaddleOCR flow
+### Product identity
 
-For the active configuration, the flow is:
+`src/product_intelligence/identity.py` intentionally uses a relatively simple hierarchy:
+
+1. explicit Product Name / Name of Product / Name of Food label;
+2. plausible front-panel candidates;
+3. nearby OCR-token joins;
+4. ordered global OCR fallback.
+
+Candidates resembling company names, addresses, nutrition, ingredients, compliance declarations or marketing copy are rejected/penalized.
+
+Product identity must remain separate from:
+
+- brand;
+- manufacturer;
+- manufacturer address;
+- marketing copy.
+
+### Food analysis
+
+- `src/food_analysis/nutrition.py` combines spatial and text evidence.
+- `ingredients.py` is section-aware and stops at subsequent label sections.
+- `allergens.py` conservatively extracts values after Contains/May contain anchors and filters to known allergen terms.
+
+Do not feed arbitrary global marketing text into the ingredient/allergen parsers when a section-specific OCR result exists.
+
+### Compliance
+
+Core checks:
+
+- manufacturer / packer / importer
+- net quantity
+- manufacture / packing date
+- MRP
+- consumer-care details
+
+Conditional/manual-review checks include country of origin and generic/common-name handling.
+
+Current statuses:
+
+- `FOUND`
+- `REVIEW`
+- `NOT_FOUND`
+
+The validator uses evidence and a confidence gate for detected declarations. A low-confidence detection can become `REVIEW`.
+
+Manufacturer extraction keeps the company/entity name separate from address text. If the manufacturer address evidence is missing, the check can remain `REVIEW` rather than falsely reporting a complete declaration.
+
+### Multi-image fusion
+
+A scan accepts up to 8 images.
+
+`src/product_intelligence/fusion.py` combines per-image product identity, food fields, compliance checks and evidence.
+
+Persisted image IDs are reconciled with analysis image entries by scan order in `app/api.py` to avoid provenance drift.
+
+### Persistence
+
+The repository is currently JSON-backed:
+
+- `src/repository/models.py`
+- `src/repository/store.py`
+
+`ProductRecord` can contain multiple `ScanRecord` objects.
+
+A scan can contain multiple `ImageRecord` objects and a complete JSON-safe analysis snapshot.
+
+`app/services/product_service.py` copies uploaded images into product-specific storage.
+
+This is suitable for the current development phase but is not the final production database architecture.
+
+### API
+
+Active routes include:
 
 ```text
-input image -> quality gate -> OpenCV preprocessing
--> run_ocr(..., image_path=original path)
--> one PaddleOCREngine.extract() / PaddleOCR.predict() call
--> normalized Paddle result -> pandas DataFrame
--> coordinate-based region detection
--> extract_text_from_region(DataFrame, region)
--> food and compliance analysis
+GET  /health
+POST /api/v1/analyze
+POST /api/v1/products/analyze
+GET  /api/v1/products/{product_id}/scans/{scan_id}/images/{image_id}
 ```
 
-PaddleOCR is called once by `run_ocr` for one `process_image` call. `app/main.py` never calls `ocr_roi` in its Paddle branch; `ocr_roi` raises `NotImplementedError` for Paddle. This prevents per-ROI Paddle inference. The Tesseract branch is different: it performs global Tesseract OCR for regions and then direct Tesseract ROI OCR.
+The API enforces:
 
-### OCR modules: decision
+- JPG/JPEG/PNG/WEBP;
+- maximum 8 images;
+- maximum 15 MB per image.
 
-- `src/ocr/provider.py` — **KEEP**. It is the active, small factory used by `engine.py` for Paddle selection.
-- `src/ocr/engine.py` — **KEEP**. It is the active compatibility layer, DataFrame adapter, Tesseract branch, and region-text filter. Modify only when a specific OCR-contract task requires it.
-- `src/ocr/normalizer.py` — **REMOVE later**, not now. `rg` finds no imports or calls, and the active flow bypasses it. Do not merge it speculatively while the OCR-persistence task is next.
+FastAPI serves the frontend build when `frontend/dist` exists.
 
-### OCR data representation
+### Frontend
 
-The active representation after `run_ocr` is a pandas DataFrame with exactly: `text`, `left`, `top`, `width`, `height`, `right`, `bottom`, and `conf`. It preserves text, confidence, and rectangular bounds for both current OCR branches. Pandas is genuinely used by the active region, nutrition, and compliance code through `iterrows`, `empty`, filtering, and column operations.
+React + TypeScript + Vite.
 
-Recommendation: **keep the DataFrame for the MVP**. It minimizes changes while supporting Tesseract, PaddleOCR, coordinate filtering, confidence, and evidence. A dataclass/list representation is viable only as a later deliberate migration with adapters; creating it now adds churn without solving the next persistence task.
+Current pages:
 
-## Preprocessing and coordinate systems
+- Home
+- Upload
+- Processing
+- Results
+- History
 
-`src/ocr/preprocessing.py` enlarges the OpenCV image by **1.5×** with cubic interpolation, converts it to grayscale, applies CLAHE (`clipLimit=2.0`, `tileGridSize=(8, 8)`), and inverts polarity when the enhanced grayscale mean is below **110**. Tesseract ROI OCR additionally median-denoises with the configured kernel and applies Otsu binary thresholding.
+The Processing page provides the large-image/live-scan presentation. Results exposes structured extraction and compliance evidence. History consumes persisted product/scan data.
 
-PaddleOCR receives the original image path, optionally internally resizes images whose longest side exceeds 2500 pixels, and converts its boxes back to original-image coordinates. `src/ocr/engine.py` then multiplies those coordinates by the application preprocessing scale (currently 1.5) so they align with the enlarged OpenCV image used for region detection and coordinate-based ROI text extraction.
+## Tests and CI
 
-## Image-quality integration
+Regression tests are under `tests/`.
 
-`src/image_quality/quality.py` runs before preprocessing/OCR. It checks resolution, blur (Laplacian variance), brightness, and contrast. Rejection thresholds are: width or height below **500 pixels**, blur variance below **35**, brightness outside **35–225**, and contrast standard deviation below **18**. Its weighted score is resolution **25%**, blur **35%**, brightness **20%**, and contrast **20%**. An image is accepted only if every check passes.
+Important suites include:
 
-This is a real hard gate in `process_image`: a rejected image does not reach preprocessing or OCR and returns a review-only `structured_result` with `source_image`, `image_quality`, and an empty compliance check set. The API preserves the normal response envelope (`success`, `api_version`, `data`, `warnings`, `errors`), but the rejected-image `data` schema is narrower than a successful structured result; it is therefore not a fully uniform result contract. Successful results add `image_quality` after `build_structured_result`. The product-analysis endpoint passes that value to `ProductService`, which persists it in `ScanRecord.image_quality`.
+- `test_extraction_regressions.py`
+- `test_fusion_conflicts.py`
+- `test_product_fusion.py`
+- `test_product_identity.py`
+- `test_repository.py`
+- `test_semantic_extraction.py`
 
-## Food-analysis modules
-
-- `src/food_analysis/nutrition.py`: spatial nutrition parsing, preferring OCR bounding-box association when DataFrame data is available. It matches recognized nutrient labels to candidate numeric lines to their right, within a vertical tolerance of `max(120, 1.5 * label height)`, then selects smallest vertical distance followed by horizontal distance. Percentage/RDA lines are excluded. It standardizes Energy to `kcal`, Sodium/Cholesterol to `mg`, and other listed nutrients to `g`; OCR confidence is read but not used to rank candidates. If spatial extraction yields no values, text parsing checks the current and next two lines; missing values are omitted. Generated output evidence records Energy `522.0 kcal` for the relevant test-run outputs. This is a verified historical parsing result from spatial association, not hard-coded or universally expected.
-- `src/food_analysis/ingredients.py`: removes the ingredients label, stops at other sections, and splits while preserving commas inside parentheses.
-- `src/food_analysis/allergens.py`: extracts `Contains` and `May Contains` declarations.
-- `src/ocr/regions.py`: detects the relevant regions using the one global OCR result; it is not a food parser.
-
-## Legal Metrology validator
-
-`src/compliance/rules.py` configures five mandatory declarations: manufacturer/packer/importer, net quantity, manufacture/packing date, MRP, and consumer care. Country of origin is conditional; generic/common commodity name is manual review.
-
-`src/compliance/extractor.py` uses tolerant patterns and attaches OCR text, confidence, and bounding boxes when available. `src/compliance/validator.py` assigns `FOUND`, `REVIEW`, or `NOT_FOUND`, leaves overall status as `REVIEW`, and returns a disclaimer. Label-without-value cases for net quantity and MRP are `REVIEW`. The implementation intentionally does not verify legal correctness, placement, font size, readability, or all conditional applicability. A barcode is not compliance evidence.
-
-`FOUND`/`REVIEW`/`NOT_FOUND` summary optimization is intentionally postponed while the backend foundation is completed. Do not optimize it unless explicitly requested later.
-
-### Implemented scope and limits
-
-- **Mandatory:** manufacturer/packer/importer, net quantity, manufacture/packing date, MRP, consumer care.
-- **Conditional:** country of origin. It is `FOUND` when detected and `REVIEW` otherwise because product applicability is not determined.
-- **Manual review:** generic/common product name, always `REVIEW` with `detected: null`.
-- **Not implemented:** legal correctness, placement, font size, readability, complete conditional applicability, semantic product-name extraction, barcode-based evidence, or legal certification.
-
-For mandatory declarations, a detected label with `value_missing` is `REVIEW`; an undetected declaration is `NOT_FOUND`; otherwise it is `FOUND`. The overall status is always `REVIEW`, never PASS/FAIL. Extractor evidence, when a regex match maps to an OCR row, is `{text, confidence, bbox: {x1, y1, x2, y2}}`. Ingredients and allergens are rule/regex heuristics, not NLP or semantic AI; OCR noise, split lines, wording variations, and region-detection failures can reduce accuracy.
-
-## Product repository and permanent scan-image storage
-
-`src/repository/models.py` defines `ProductRecord` and `ScanRecord`; barcodes are optional metadata. `src/repository/store.py` persists them in JSON at `data/products.json` and keeps repository logic separate from API and analysis code.
-
-`app/services/product_service.py` is responsible for product creation, product lookup, product listing, scan creation, permanent image copying, scan-history retrieval, and individual scan lookup. It copies each analyzed image to `data/product_images/<product_id>/<scan_id>.<extension>` and persists the scan record. If persistence fails after the copy, it removes that newly copied image. This is the intended permanent scan-image location.
-
-## Current REST API endpoints
-
-All endpoint implementations are in `app/api.py`.
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/` | Health check |
-| POST | `/api/v1/analyze` | Analyze an uploaded JPG, JPEG, PNG, or WEBP without storing it as a product scan |
-| POST | `/api/v1/products` | Create a product with optional name, brand, barcode, and manufacturer |
-| GET | `/api/v1/products` | List stored products |
-| GET | `/api/v1/products/{product_id}` | Return a product and its scans |
-| GET | `/api/v1/products/{product_id}/scans` | Return scan history |
-| GET | `/api/v1/products/{product_id}/scans/{scan_id}` | Return one scan |
-| POST | `/api/v1/products/{product_id}/analyze` | Analyze an upload and persist it as that product's scan |
-
-## Verified tests and current sample data
-
-There are currently no formal API test files or test-runner configuration. The API endpoints have been manually smoke-tested with `curl`; these are manual checks, not automated API tests. `test_paddle.py` points to the existing `images/IMG_0981.jpeg`, but its result handling is obsolete and therefore it is not a valid smoke verification as written.
-
-Current repository data contains test product `PROD-63045662AEB7` (`Test Product`, `Test Brand`, barcode `8901234567890`) in `data/products.json`. It has three scans. The two permanent scan files currently present are:
-
-- `data/product_images/PROD-63045662AEB7/SCAN-6567AFA83280.jpg`
-- `data/product_images/PROD-63045662AEB7/SCAN-2C10EA309748.jpg`
-
-The oldest scan points to a deleted temporary-system path and is not permanent. The latest verified scan is `SCAN-2C10EA309748` (2026-09-02T23:33:48.034438): its image quality is `accepted=true` with score `99.1`, and its compliance overall status is `REVIEW`. Stored counts are 2 detected, 2 review, and 1 missing of 5 mandatory declarations.
-
-## Known gaps and postponed work
-
-- No automated tests for API, repository, OCR conversion, quality gates, or compliance extraction.
-- Documentation placeholders `docs/architecture.md` and `docs/api.md` have no content.
-- `requirements.txt` is empty even though the active code imports OpenCV, PaddleOCR, pandas, pytesseract, FastAPI, Pydantic, Pillow, and NumPy.
-- `images/IMG_0981.jpeg` exists. However, `test_paddle.py` iterates the current wrapper's result dictionary as though it returned Paddle result objects, so it cannot correctly report recognized lines and is not a valid smoke verification until updated.
-- Scan storage currently uses a JSON file, not transactional database storage, and one older record retains a non-permanent temporary path.
-- `ScanRecord` already has an `ocr` field, but all current stored scans have `"ocr": null`. The product-analysis API passes `image_quality` but does **not** pass OCR information to `ProductService`.
-- The system lacks product-name semantic extraction, placement verification, font-size verification, legal-readability assessment, and full conditional-rule applicability.
-- Frontend/dashboard, enforcement reports, and broader product/compliance history features remain future work.
-
-## Next task
+GitHub Actions workflow:
 
 ```text
-compact OCR summary in process_image()
-→ attach to structured_result["ocr"]
-→ pass through product analysis API
-→ ProductService.add_analysis_scan()
-→ ScanRecord.ocr
-→ GET /api/v1/products/{product_id}/scans/{scan_id}
-→ verify persisted result
+.github/workflows/validation.yml
+  ├── backend-regressions
+  │    └── pytest -q tests/test_extraction_regressions.py
+  └── frontend-build
+       └── npm ci && npm run build
 ```
 
-The intended compact payload is `{ "engine": "...", "line_count": ..., "average_confidence": ... }`. Do not implement it in the current task.
+CI uses Python 3.11 for the regression suite.
 
-## Testing and historical-context audit
+A recent CI failure was caused by a malformed string literal in `src/ocr/engine.py`, not by a failed extraction assertion. That syntax error was repaired in commit `befbf213f5feac604b069f9c56152756000ab0e4`. Always verify the current workflow before claiming CI is green.
 
-There are no formal API test files, test framework configuration, fixtures, or test runner. README provides a `curl` example, and the context records manual curl smoke testing; this is not automated coverage. Existing generated reports provide historical/manual output evidence only and include stale results with `PASS` and `PARTIAL` overall statuses that the current validator cannot produce. Do not use those historical output files to infer the current contract.
+## Local development
 
-Historical/planned capabilities are classified as follows:
+Repository path used during development:
 
-| Capability | Current status |
-| --- | --- |
-| OCR cleaning / preprocessing | IMPLEMENTED (the exact transformations documented above) |
-| OCR normalizer module | NOT PRESENT in active flow (unused module exists) |
-| NLP/LLM layer | NOT PRESENT |
-| perspective correction, sharpening, multilingual OCR | NOT PRESENT |
-| additional CV preprocessing beyond current resize/grayscale/CLAHE/polarity and Tesseract ROI denoise/Otsu | NOT PRESENT |
-| product history / permanent image storage | IMPLEMENTED via JSON repository and `data/product_images` |
-| SQLite/PostgreSQL migration | PLANNED |
-| Android/Web frontend | PLANNED; FastAPI boundary is implemented |
-| evaluation metrics / formal test suite | NOT PRESENT |
+```text
+/Users/tillu/Projects/NIVAR
+```
 
-## Active-file responsibility audit
+Recommended backend commands:
 
-| File | Responsibility and actual implementation | Used by | Status / known issue |
-| --- | --- | --- | --- |
-| `app/main.py` | Active pipeline, CLI and Tkinter UI; invokes quality, OCR, regions, analysis, reporting. | API service, CLI/GUI | IMPLEMENTED; large mixed orchestration/UI module and saves generated results on every successful run. |
-| `app/api.py` | FastAPI envelope, upload validation, temp-file lifecycle, product routes. | Uvicorn/FastAPI | IMPLEMENTED; no formal tests; analysis is synchronous; quality-reject data schema differs from success. |
-| `app/services/analyzer_service.py` | Validates a path and returns `process_image(...)["structured_result"]`. | API | IMPLEMENTED. |
-| `app/services/product_service.py` | Product CRUD-like access, scan ID creation, permanent image copy, rollback, scan lookup/history. | API | IMPLEMENTED; accepts OCR payload but API does not pass one. |
-| `src/ocr/engine.py` | Active DataFrame adaptation, configured OCR dispatch, Tesseract ROI OCR, overlap filter. | `app/main.py`, `regions.py` | IMPLEMENTED. |
-| `src/ocr/provider.py` | Creates named OCR wrappers. | `engine.py` | IMPLEMENTED. |
-| `src/ocr/paddle_engine.py` | Calls Paddle once, optionally resizes, normalizes boxes to original coordinates. | provider/engine | IMPLEMENTED. |
-| `src/ocr/tesseract_engine.py` | Path-based provider-compatible wrapper. | provider only | PARTIAL; active Tesseract branch instead uses private engine helpers. |
-| `src/ocr/normalizer.py` | Normalizes a dict result. | none | DEAD-OR-UNUSED. |
-| `src/ocr/preprocessing.py` | Global and Tesseract-ROI preprocessing. | main/engine/nutrition | IMPLEMENTED. |
-| `src/ocr/regions.py` | OCR-coordinate heuristics for four sections and crops/split. | main | IMPLEMENTED; layout heuristic. |
-| `src/image_quality/quality.py` | Pre-OCR measurements and gate report. | main | IMPLEMENTED. |
-| `src/food_analysis/nutrition.py` | Spatial then text-fallback nutrition parsing. | main | IMPLEMENTED; confidence unused. |
-| `src/food_analysis/ingredients.py` | Heuristic cleanup and comma splitting. | main | IMPLEMENTED; OCR/layout sensitive. |
-| `src/food_analysis/allergens.py` | `Contains`/`May Contains` regex extraction. | main | IMPLEMENTED; wording-sensitive. |
-| `src/compliance/extractor.py` | Regex declarations and row evidence. | validator | IMPLEMENTED; contains unreachable duplicate consumer-care code after `return`. |
-| `src/compliance/rules.py` | Rule configuration. | validator | IMPLEMENTED. |
-| `src/compliance/validator.py` | Conservative status report and disclaimer. | main | IMPLEMENTED; overall permanently REVIEW. |
-| `src/repository/models.py` | Product/scan dataclasses and JSON conversion. | store/service | IMPLEMENTED. |
-| `src/repository/store.py` | JSON loading, saving, product and scan operations. | service | IMPLEMENTED; no transaction/concurrency protection. |
-| `src/reporting/json_report.py` | Structured-result builder and generated JSON writer. | main | IMPLEMENTED; does not include OCR summary yet. |
-| `src/reporting/visualization.py` | Generated overlays and ROI images. | main | IMPLEMENTED; debug output is always written on successful pipeline runs. |
-
-## Final architecture recommendation and change disposition
-
-Keep the present FastAPI -> service -> analysis -> repository separation, one global Paddle inference, DataFrame OCR representation, coordinate-based filtering, image quality gate, and JSON repository boundary. This is the simplest MVP architecture compatible with Android/Web clients now and a later SQLite/PostgreSQL repository replacement. Do not introduce an OCR dataclass or refactor `app/main.py` now; the compact OCR persistence task is smaller and directly improves the scan API.
-
-| Disposition | Files / scope | MVP decision |
-| --- | --- | --- |
-| KEEP | active API, service, OCR engine/provider/Paddle wrapper, preprocessing, regions, quality, food, compliance, repository, reporting modules | Needed now. |
-| MODIFY next | `app/main.py`, `app/api.py`, `app/services/product_service.py`, `src/reporting/json_report.py` | Only for the explicitly scoped compact OCR-summary persistence task. |
-| MODIFY later | `requirements.txt`, `test_paddle.py`, API tests, repository transaction/concurrency behavior | Needed for reliability, not before the next scoped task unless explicitly chosen. |
-| REMOVE later | `src/ocr/normalizer.py`; unreachable duplicate block in `extract_consumer_care`; obsolete root scripts after migration confirmation | Not needed by active MVP; do not remove during the next task. |
-| MERGE | None now | Do not merge legacy standalone scripts into active modules. |
-| CREATE later | formal API/unit tests, database repository implementation, frontend, advanced CV/legal verification | Planned, not implemented. |
-
-## Commands
-
-```sh
-# Compile any Python file changed in a future task
-python -m py_compile path/to/changed_file.py
-
-# Start the API
+```bash
+source venv/bin/activate
+python -m pip install -r requirements.txt
+python -m app.main <image-path>
 uvicorn app.api:app --reload
-
-# Existing PaddleOCR script; its result handling requires correction before it is a valid verification
-python test_paddle.py
 ```
+
+Recommended frontend commands:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+## Working rules
+
+1. Prefer complete, coherent feature batches over many micro-patches.
+2. For structural changes, inspect the current source before editing.
+3. Add regression coverage for extraction behavior.
+4. Preserve OCR evidence and source-image provenance.
+5. Do not infer missing values from unrelated numbers.
+6. Do not hard-code coordinates for a single image.
+7. Do not repeatedly run full-image OCR when existing evidence is sufficient.
+8. Keep legal rules in the compliance layer.
+9. Keep API concerns out of OCR/extraction modules.
+10. Treat `FOUND` as detected evidence, not legal certification.
+11. Treat `NOT_FOUND` as “not detected,” not proof of physical absence.
+12. Verify tests and CI before declaring a change complete.
+
+## Current next priorities
+
+See [TODO.md](TODO.md). The immediate focus is extraction reliability and evidence quality before deeper compliance automation.
+
+
+# Historical development handoff — complete checkpoint timeline
+
+## Checkpoint A — SIH problem selection and framing
+NIVAR began from SIH26034, focused on checking packaged-commodity declarations under the Legal Metrology (Packaged Commodities) Rules, 2011. The original concept was broader than OCR: scan packaging, identify mandatory declarations, detect presentation problems, and give an evidence-backed compliance result. Early pitch work emphasized the problem, solution, innovation, technical architecture, feasibility, risk mitigation, impact, scalability and genuine references.
+
+## Checkpoint B — OpenCV + Tesseract prototype
+The first practical prototype was developed as an OpenCV/Tesseract label analyzer on macOS. A Tkinter image picker, preprocessing experiments, Tesseract image_to_string/image_to_data, confidence values and bounding boxes were used. Green OCR boxes and automatic regions were introduced to make the result visually understandable.
+
+Real packaging images exposed the first major limitation: OCR can recover text while still failing to understand which text belongs to ingredients, nutrition, allergens or Legal Metrology declarations.
+
+## Checkpoint C — Automatic ROI/section detection
+An automatic analyzer was added to locate Ingredients, Nutrition and Allergens sections from OCR headings and coordinates. Example detections included Nutrition around x=387,y=2098 and Ingredients around x=2040,y=2017 on one large sample. This established the need to preserve OCR geometry instead of flattening the result into one text string.
+
+## Checkpoint D — PaddleOCR migration
+PaddleOCR became the primary OCR engine because the project needs stronger layout handling, multilingual Indian-language support, orientation handling and unwarping. PaddleOCR 3.7.0 and PaddlePaddle 3.2.2 became the pinned stack. Tesseract remains available as a secondary provider.
+
+Current PaddleOCR settings enable document orientation classification, document unwarping and text-line orientation. OCR results preserve text, confidence, bounding boxes and language, with coordinates mapped back to the original image after resizing.
+
+## Checkpoint E — Real-image extraction
+Large real package images were processed, including a 4110×5271 sample. OCR recovered substantial packaging text and the nutrition extractor recovered a complete set of useful nutrition values. This demonstrated that the project could move from OCR into structured food-label extraction.
+
+At the same time, ingredients and allergens were noisy and the first compliance implementation frequently returned NOT_FOUND even when declarations were visually present. This became the central reliability issue.
+
+## Checkpoint F — Semantic extraction architecture
+The codebase was separated into OCR, preprocessing, food analysis, product intelligence, compliance, fusion, repository, API and frontend layers. The key architectural decision was that OCR creates evidence while semantic extraction interprets it and the validator applies compliance rules.
+
+Product identity was deliberately simplified after an earlier implementation became over-optimized. The current hierarchy is explicit product-name labels first, then plausible front-panel candidates, joined OCR tokens and ordered global fallback. Manufacturer, address, nutrition, ingredients, compliance text and marketing copy are penalized/rejected as product-name candidates.
+
+## Checkpoint G — Manufacturer/address correction
+A real extraction bug selected an address-like OCR value as the manufacturer entity. The extractor was changed so legal/company entities are favored and address indicators, phone numbers, email and PIN codes are penalized. Manufacturer name and address remain separate evidence fields. Missing address evidence can force REVIEW instead of a false complete match.
+
+## Checkpoint H — Compliance validator
+The compliance layer was formalized around five core declarations: manufacturer/packer/importer, net quantity, manufacture/packing date, MRP and consumer care. Country of origin and generic/common-name handling are additional conditional/manual-review areas.
+
+The validator uses FOUND, REVIEW and NOT_FOUND. FOUND means detected evidence, REVIEW means incomplete/uncertain evidence, and NOT_FOUND means the current system did not detect evidence. These statuses are deliberately not treated as legal certification.
+
+## Checkpoint I — Multi-image fusion
+One package may distribute mandatory information across several faces. The system was therefore extended to accept up to eight images and fuse product identity, food fields, compliance findings, conflicts and evidence. Persisted source-image references are reconciled using scan order so provenance does not drift between analysis and stored images.
+
+## Checkpoint J — Persistence and API
+The backend evolved into a FastAPI application with product and scan persistence. Uploaded images are stored under product-specific storage, and analysis snapshots are retained. The API supports health, single/multi-image analysis and persisted scan-image retrieval.
+
+## Checkpoint K — React frontend
+The frontend became a React/TypeScript/Vite application with Home, Upload, Processing, Results and History pages. The Processing screen was redesigned around a large image, scanner animation, live-scan indicator, PaddleOCR/NIVAR indicators, thumbnails and pipeline progress.
+
+A frontend issue was reported where the new scanner UI appeared on the first scan but an older UI appeared on later scans. The source build passed, but a true browser-level repeated-scan test has not been established from the available tooling. Therefore this must not be described as fixed merely because CI builds successfully.
+
+## Checkpoint L — Regression tests and CI
+Regression tests were introduced for extraction, product identity, multi-image fusion, conflicts, repository behavior and semantic extraction. GitHub Actions runs backend regression tests and a frontend production build.
+
+During development, CI exposed malformed newline string literals in src/ocr/engine.py. Multiple syntax issues were repaired, including the region-text join. This reinforced the project rule that no change should be declared complete without verification.
+
+## Checkpoint M — Current primary blocker
+The current blocker is false negatives on the five mandatory declarations. A package can visibly contain the declarations while the final validator reports NOT_FOUND. This must be traced before adding advanced computer-vision features.
+
+The debugging path must be: actual image → raw PaddleOCR lines → bounding boxes → region detection → declaration candidate generation → candidate rejection/confidence → validator. For every declaration, determine whether the text was absent from OCR, excluded by region detection, missed by pattern matching, split across OCR lines, rejected as the wrong semantic candidate, or downgraded by confidence.
+
+Do not solve this by taking the nearest arbitrary number. Packaging contains dates, batch numbers, nutrition values, phone numbers, PIN codes and prices. Candidate extraction must be declaration-specific and evidence-aware.
+
+## Checkpoint N — Curved/cylindrical packaging is a later phase
+PaddleOCR already has unwarping enabled, but cylindrical and strongly curved packaging may require an additional cylindrical unwrap or multi-pass OCR strategy. The proposed future approach is original image + unwarped image + cylindrical representation when needed, followed by confidence/text-coverage comparison and evidence fusion. This work should begin only after the five-declaration false-negative problem is understood.
+
+## Current implementation rules
+1. Inspect the current repository before changing architecture.
+2. Preserve OCR text, confidence, bbox and source-image provenance.
+3. Prefer semantic/spatial evidence over exact-string matching.
+4. Do not infer declaration values from arbitrary numbers.
+5. Do not hard-code coordinates for one package.
+6. Keep legal rules in the compliance layer.
+7. Keep API code separate from OCR and extraction.
+8. Use multi-image fusion for package faces.
+9. Add regression tests for every extraction bug fixed.
+10. Verify CI and, when relevant, browser/runtime behavior before claiming success.
+
+## Immediate continuation task
+Take one real failing image for which the five mandatory declarations are visibly present. Instrument or inspect the existing pipeline to show the OCR lines and bboxes for each declaration. Trace each one through enhanced_extractor and validator. Fix the actual evidence-loss point, add a regression fixture/test, run the backend tests and frontend build, then evaluate whether cylindrical/curved handling is still necessary for that failure.
+
+## Continuation prompt for a new chat
+I am continuing NIVAR, repository tanmayjain9059/NIVAR, branch semantic-extraction-rewrite. Read docs/CODEX_CONTEXT.md before doing anything. Do not restart the project or invent a new architecture. The immediate blocker is false negatives: the five mandatory Legal Metrology declarations can be visibly present on a package but NIVAR returns NOT_FOUND. Trace one real failing image through PaddleOCR text/bboxes, region detection, enhanced_extractor, candidate scoring and validator. Identify exactly where evidence is lost, make the smallest robust evidence-aware fix, add regression tests, run tests/CI, and verify before claiming success. Only after that work on curved/bent/cylindrical packaging using PaddleOCR unwarping and, if necessary, cylindrical unwrap/multi-pass OCR.
+
+## Repository links
+Context document: https://github.com/tanmayjain9059/NIVAR/blob/semantic-extraction-rewrite/docs/CODEX_CONTEXT.md
+Development branch: https://github.com/tanmayjain9059/NIVAR/tree/semantic-extraction-rewrite

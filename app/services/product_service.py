@@ -261,6 +261,10 @@ class ProductService:
                 stored_images,
                 image_analyses,
             ):
+                # Replace the transient analysis ID with the persisted
+                # image ID so API evidence URLs and provenance stay aligned.
+                image_entry["image_id"] = image_record.image_id
+                image_entry["filename"] = image_record.filename
                 image_record.analysis = (
                     image_entry.get("analysis")
                 )

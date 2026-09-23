@@ -432,42 +432,23 @@ function AllergensSection({
 // Nutrition section
 // ──────────────────────────────────────────────────────────────────────────────
 
-function NutritionSection() {
+function NutritionSection({nutrition}:{nutrition:AnalyzeResponse["data"]["nutrition"]}) {
+  const entries=Object.entries(nutrition??{});
   return (
-    <SectionCard
-      title="Advanced Nutrition Analysis"
-      icon={<FlaskConical className="w-4 h-4" />}
-    >
-      <div className="py-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
-            Coming Soon
-          </span>
+    <SectionCard title="Nutrition" icon={<FlaskConical className="w-4 h-4" />}>
+      {entries.length===0 ? (
+        <p className="text-sm text-civic-muted italic">Nutrition values could not be reliably extracted.</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {entries.map(([name,value])=>(
+            <div key={name} className="rounded-lg bg-zinc-50 border border-zinc-100 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-civic-muted">{name}</p>
+              <p className="text-sm font-semibold text-civic-text mt-0.5">{displayValue(value)}</p>
+            </div>
+          ))}
         </div>
-
-        <h3 className="text-sm font-semibold text-civic-text mb-2">
-          Detailed nutrition analysis
-        </h3>
-
-        <p className="text-sm text-civic-muted leading-relaxed">
-          Automated extraction of calories, macronutrients, and
-          detailed nutrition-table values will be available in a
-          future version.
-        </p>
-
-        <div className="flex flex-wrap gap-2 mt-4">
-          {["Calories", "Macronutrients", "Nutrition Table"].map(
-            (item) => (
-              <span
-                key={item}
-                className="text-[11px] px-2.5 py-1 rounded-md bg-zinc-50 border border-zinc-200 text-zinc-500"
-              >
-                {item}
-              </span>
-            )
-          )}
-        </div>
-      </div>
+      )}
+      {entries.length>0&&<p className="text-[10px] text-civic-muted mt-3"><ScanLine className="w-3 h-3 inline mr-1"/>Values extracted from the scanned nutrition label.</p>}
     </SectionCard>
   );
 }
@@ -476,39 +457,19 @@ function NutritionSection() {
 // Source image
 // ──────────────────────────────────────────────────────────────────────────────
 
-function EvidenceSection({
-  sourceImage,
-}: {
-  sourceImage: string;
-}) {
+function EvidenceSection({images,sourceImage}:{images:AnalyzeResponse["data"]["images"];sourceImage?:string}) {
+  const items=(images??[]).filter(image=>image.source_url||image.filename);
   return (
-    <SectionCard
-      title="Source Image"
-      icon={<ImageIcon className="w-4 h-4" />}
-    >
-      {sourceImage &&
-      sourceImage !== "mock_uploaded_image_url_placeholder" ? (
-        <div className="rounded-lg overflow-hidden border border-zinc-100">
-          <img
-            src={sourceImage}
-            alt="Original product label"
-            className="w-full max-h-72 object-contain bg-zinc-50"
-          />
-        </div>
-      ) : (
-        <div className="rounded-lg bg-zinc-50 border border-zinc-200 h-40 flex flex-col items-center justify-center gap-2">
-          <ImageIcon className="w-8 h-8 text-zinc-300" />
-
-          <p className="text-xs text-civic-muted">
-            Source image not available in this context
-          </p>
-        </div>
-      )}
-
-      <p className="text-[10px] text-civic-muted mt-3">
-        OCR bounding-box overlays and region detection will appear
-        here when the backend exposes that information.
-      </p>
+    <SectionCard title="Source Images" icon={<ImageIcon className="w-4 h-4" />}>
+      {items.length===0&&sourceImage ? <div className="rounded-lg overflow-hidden border border-zinc-100"><img src={sourceImage} alt="Original product label" className="w-full max-h-72 object-contain bg-zinc-50"/></div> :
+       items.length===0 ? <div className="rounded-lg bg-zinc-50 border border-zinc-200 h-40 flex flex-col items-center justify-center gap-2"><ImageIcon className="w-8 h-8 text-zinc-300"/><p className="text-xs text-civic-muted">Source images not available</p></div> :
+       <div className="grid grid-cols-2 gap-3">{items.map((image,index)=>(
+         <div key={image.image_id??index} className="rounded-lg overflow-hidden border border-zinc-200 bg-zinc-50">
+           {image.source_url ? <img src={image.source_url} alt={image.filename??"Source label"} className="w-full h-44 object-contain"/> : <div className="h-44 flex items-center justify-center text-xs text-civic-muted">Image unavailable</div>}
+           <div className="px-2.5 py-2 bg-white"><p className="text-[10px] font-medium truncate">{image.filename??"Source image"}</p><p className="text-[9px] text-civic-muted">{image.image_id??""}</p></div>
+         </div>
+       ))}</div>}
+      <p className="text-[10px] text-civic-muted mt-3">Original uploaded images are retained as evidence for this scan.</p>
     </SectionCard>
   );
 }
@@ -763,10 +724,10 @@ const ingredientCount = Array.isArray(data.ingredients)
                   value={data.brand}
                 />
 
-                <Field
-                  label="Product Name"
-                  value={data.product_name}
-                />
+                <div>
+                  <Field label="Product Name" value={data.product_name}/>
+                  {data.product_name_confidence!=null&&<p className="text-[10px] text-civic-muted mt-1">{Math.round(data.product_name_confidence*100)}% extraction confidence</p>}
+                </div>
 
                 <Field
                   label="Net Quantity"
@@ -802,6 +763,7 @@ const ingredientCount = Array.isArray(data.ingredients)
 
             <EvidenceSection
               sourceImage={data.source_image ?? ""}
+              images={data.images}
             />
           </motion.div>
 
@@ -825,7 +787,7 @@ const ingredientCount = Array.isArray(data.ingredients)
               allergens={data.allergens ?? null}
             />
 
-            <NutritionSection />
+            <NutritionSection nutrition={data.nutrition} />
           </motion.div>
 
           {/* Errors */}

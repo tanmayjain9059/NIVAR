@@ -611,7 +611,7 @@ def process_image(file_path, config=CONFIG):
     if engine_name == "paddle":
 
         nutrition = parse_nutrition_text(
-            nutrition_text,
+            "\n".join(part for part in (nutrition_text, raw_text) if part),
             ocr_data=data,
         )
 
@@ -622,12 +622,29 @@ def process_image(file_path, config=CONFIG):
             config,
         )
 
+    # Food parsers consume section-scoped OCR only. Global OCR remains
+    # available to identity/compliance logic but must not contaminate a
+    # bounded section such as ingredients or allergens.
+    ingredients_source = ingredients_text
+    if not ingredients_source.strip():
+        ingredients_source = extract_text_from_region(
+            data,
+            ingredients_region,
+        )
+
+    allergens_source = allergen_text
+    if not allergens_source.strip():
+        allergens_source = extract_text_from_region(
+            data,
+            allergen_region,
+        )
+
     ingredients = parse_ingredients(
-        ingredients_text,
+        ingredients_source,
     )
 
     contains, may_contain = parse_allergens(
-        allergen_text,
+        allergens_source,
     )
 
     # --------------------------------------------------------
@@ -721,6 +738,26 @@ def process_image(file_path, config=CONFIG):
     structured_result["product_identity"] = (
         product_identity
     )
+
+    # Promote high-confidence core declaration evidence into the product
+    # information fields shown by the UI.
+    checks = compliance_report.get("checks", {})
+    def _matched(key):
+        item = checks.get(key, {})
+        return item.get("matched_text") if item.get("status") in {"FOUND", "REVIEW"} else None
+
+    structured_result["quantity"] = _matched("net_quantity")
+    manufacturer_check = checks.get("manufacturer_packer_importer", {})
+    structured_result["manufacturer"] = (
+        manufacturer_check.get("manufacturer_name")
+        or manufacturer_check.get("evidence", {}).get("manufacturer_name")
+        or manufacturer_check.get("matched_text")
+    )
+    structured_result["manufacturer_address_detected"] = bool(
+        manufacturer_check.get("evidence", {}).get("address_detected")
+        or manufacturer_check.get("address_detected")
+    )
+    structured_result["manufacturing_date"] = _matched("manufacture_date")
 
     structured_result["product_name"] = (
         product_identity.get(

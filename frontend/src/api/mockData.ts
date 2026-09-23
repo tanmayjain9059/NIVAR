@@ -70,16 +70,16 @@ export const MOCK_ANALYSIS_RESULT: AnalyzeResponse = {
       may_contain: ["Peanuts", "Soy", "Milk"]
     },
     nutrition: {
-      "Energy": "412 kcal",
-      "Total Fat": "14 g",
-      "Saturated Fat": "1.5 g",
-      "Trans Fat": "0 g",
-      "Cholesterol": "0 mg",
-      "Carbohydrates": "62 g",
-      "Total Sugars": "18 g",
-      "Added Sugars": "12 g",
-      "Protein": "9 g",
-      "Sodium": "110 mg"
+      "Energy": { value: 412, unit: "kcal" },
+      "Total Fat": { value: 14, unit: "g" },
+      "Saturated Fat": { value: 1.5, unit: "g" },
+      "Trans Fat": { value: 0, unit: "g" },
+      "Cholesterol": { value: 0, unit: "mg" },
+      "Carbohydrates": { value: 62, unit: "g" },
+      "Total Sugars": { value: 18, unit: "g" },
+      "Added Sugars": { value: 12, unit: "g" },
+      "Protein": { value: 9, unit: "g" },
+      "Sodium": { value: 110, unit: "mg" }
     },
     quantity: "200 g",
     manufacturer: "Example Foods Pvt. Ltd.",

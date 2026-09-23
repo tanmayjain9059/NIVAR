@@ -1,31 +1,15 @@
 """
 OCR provider factory.
-
-Keeps the application independent from the OCR implementation.
 """
-
-from .paddle_engine import PaddleOCREngine
+from .paddle_engine import PaddleOCREngine, SUPPORTED_LANGUAGES
 from .tesseract_engine import TesseractOCREngine
 
-
-def create_ocr_engine(name: str = "paddle"):
-    """
-    Create an OCR engine.
-
-    Supported engines:
-        paddle
-        tesseract
-    """
-
+def create_ocr_engine(name: str = "paddle", language: str = "en"):
     name = name.lower().strip()
-
     if name == "paddle":
-        return PaddleOCREngine()
-
+        return PaddleOCREngine(
+            lang=language if language in SUPPORTED_LANGUAGES else "en"
+        )
     if name == "tesseract":
         return TesseractOCREngine()
-
-    raise ValueError(
-        f"Unsupported OCR engine: {name}"
-    )
-    
+    raise ValueError(f"Unsupported OCR engine: {name}")
