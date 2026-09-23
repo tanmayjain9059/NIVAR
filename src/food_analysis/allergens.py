@@ -32,6 +32,10 @@ _ALLOWED = {
     "almonds": "Tree Nuts",
     "cashew": "Tree Nuts",
     "cashews": "Tree Nuts",
+    "sulphite": "Sulphite",
+    "sulphites": "Sulphite",
+    "sulfite": "Sulphite",
+    "sulfites": "Sulphite",
 }
 
 _CANONICAL_PATTERNS = sorted(
