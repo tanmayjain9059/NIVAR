@@ -205,6 +205,7 @@ def _candidate(
     confidence: float | None = None,
     source: str,
     front: bool,
+    evidence_text: str | None = None,
 ) -> dict[str, Any] | None:
     value = _clean(value)
 
@@ -218,7 +219,11 @@ def _candidate(
             else 0.5
         )
 
-    evidence = _evidence(row, value) if row is not None else None
+    evidence = (
+        _evidence(row, evidence_text if evidence_text is not None else value)
+        if row is not None
+        else None
+    )
 
     return {
         "value": value,
@@ -268,6 +273,7 @@ def _explicit_candidates(ocr_data):
                 confidence=confidence,
                 source="explicit_product_label",
                 front=True,
+                evidence_text=text,
             )
 
             if candidate:
@@ -281,6 +287,7 @@ def _explicit_candidates(ocr_data):
                 confidence=confidence,
                 source="explicit_brand_label",
                 front=True,
+                evidence_text=text,
             )
 
             if candidate:
@@ -294,6 +301,7 @@ def _explicit_candidates(ocr_data):
                 confidence=min(confidence, 0.9),
                 source="manufacturer_entity",
                 front=False,
+                evidence_text=text,
             )
 
             if candidate:
