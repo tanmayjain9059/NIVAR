@@ -146,6 +146,20 @@ def _clean_manufacturer_brand(value: str) -> str:
 
     value = _clean(value)
 
+    # Company/legal-form suffixes are not useful brand tokens. Strip the
+    # suffix and anything OCR captured after it (licenses, punctuation, etc.).
+    suffix = re.search(
+        r"\b(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|"
+        r"llp|inc\.?|incorporated|corp\.?|corporation|company|"
+        r"industries|food\s+products|foods|enterprises|traders|manufacturers?)\b",
+        value,
+        re.I,
+    )
+    if suffix:
+        value = value[:suffix.start()]
+
+    value = _clean(value)
+
     value = re.sub(
         r"\s+(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|"
         r"llp|inc\.?|incorporated|corp\.?|corporation|company|"
@@ -308,17 +322,6 @@ def _explicit_candidates(ocr_data):
                 brands.append(candidate)
 
     return products, brands
-
-
-def _row_box_dimensions(row):
-    try:
-        left = float(row["left"])
-        top = float(row["top"])
-        right = float(row["right"])
-        bottom = float(row["bottom"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    return left, top, right, bottom
 
 
 def _front_candidates(ocr_data):
