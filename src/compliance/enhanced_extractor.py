@@ -9,6 +9,8 @@ there is useful value/contact evidence, otherwise REVIEW is returned.
 import re
 from typing import Any
 
+from .evidence import grouped_text, nearby_candidates
+
 LABELS = {
     "manufacturer_packer_importer": [
         r"manufactured\s+by", r"packed\s+by", r"marketed\s+by", r"imported\s+by",
@@ -59,10 +61,10 @@ LABELS = {
 
 UNITS=r"(?:g|gm|gms|kg|mg|ml|l|ltr|litre|liter|pcs|pieces|pc|units?|किग्रा|ग्राम|मि?ली)"
 QUANTITY_RE=re.compile(rf"\b\d+(?:\.\d+)?\s*{UNITS}\b",re.I)
-DATE_RE=re.compile(r"(?<!\d)(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}[/-](?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[/-]\d{2,4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[/-]\d{2,4}|\d{1,2}(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\d{2,4})(?!\d)",re.I)
+DATE_RE=re.compile(r"(?<!\d)(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{1,2}[./-]\d{2,4}|\d{1,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[ ./-]?\d{2,4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[ ./-]\d{2,4}|\d{1,2}(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\d{2,4})(?!\d)",re.I)
 MRP_RE=re.compile(r"(?:₹|rs\.?|inr)?\s*\d{1,5}(?:\.\d{1,2})?",re.I)
 EMAIL_RE=re.compile(r"\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b",re.I)
-PHONE_RE=re.compile(r"\b(?:\+?91[\s-]?)?(?:0)?[6-9]\d{9}\b|\b(?:1800|1860)[\s-]?\d{2,4}[\s-]?\d{3,4}\b")
+PHONE_RE=re.compile(r"(?<!\d)(?:(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|(?:0\d{2,5}[\s-]?\d{5,8})|(?:1800|1860)[\s-]?\d{2,4}[\s-]?\d{3,4})(?!\d)")
 
 def _norm(text): return re.sub(r"\s+"," ",str(text or "").strip())
 def _conf(v):
@@ -80,15 +82,8 @@ def _evidence(row,text=None):
     except (KeyError,TypeError,ValueError): return None
 
 def _ocr_text(ocr_data):
-    """Build a spatially ordered fallback text stream from OCR boxes."""
-    rows = _rows(ocr_data)
-    if not rows:
-        return ""
-    try:
-        rows = sorted(rows, key=lambda r: (float(r.get("top", 0)), float(r.get("left", 0))))
-    except (TypeError, ValueError):
-        pass
-    return "\n".join(_norm(r.get("text")) for r in rows if _norm(r.get("text")))
+    """Build logical OCR lines by merging boxes on the same visual baseline."""
+    return grouped_text(ocr_data)
 
 
 def _rows(ocr_data):
@@ -109,27 +104,15 @@ def _label_match(text,patterns):
 
 def _nearby_values(label_row,ocr_data,predicate,max_gap=1500):
     try:
-        lx,ly,lr,lb=map(float,(label_row["left"],label_row["top"],label_row["right"],label_row["bottom"]))
-    except (KeyError,TypeError,ValueError): return []
-    out=[]
-    for _,row in ocr_data.iterrows():
-        if row.name==label_row.name: continue
-        text=_norm(row.get("text"))
-        if not text or not predicate(text): continue
-        try:
-            left,top,right,bottom=map(float,(row["left"],row["top"],row["right"],row["bottom"]))
-        except (KeyError,TypeError,ValueError): continue
-        cy=(top+bottom)/2; lcy=(ly+lb)/2
-        right_gap=left-lr
-        below_gap=top-lb
-        if 0<=right_gap<=max_gap and abs(cy-lcy)<=max(60,(lb-ly)*2):
-            score=100-right_gap*.12-abs(cy-lcy)*.2
-        elif 0<=below_gap<=max_gap and abs((left+right)/2-(lx+lr)/2)<=max_gap:
-            score=85-below_gap*.10
-        else:
-            continue
-        out.append((score,row))
-    return sorted(out,key=lambda x:x[0],reverse=True)
+        label_group={
+            "left":float(label_row["left"]),
+            "top":float(label_row["top"]),
+            "right":float(label_row["right"]),
+            "bottom":float(label_row["bottom"]),
+        }
+    except (KeyError,TypeError,ValueError):
+        return []
+    return nearby_candidates(label_group,ocr_data,predicate)
 
 def _result(detected,matched_text,evidence=None,value_missing=False):
     result={"detected":detected,"matched_text":matched_text}
@@ -142,6 +125,18 @@ _COMPANY_SUFFIX_RE=re.compile(
     r"\b(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|llp|inc\.?|incorporated|corp\.?|corporation|co\.?|company|industries|foods|food\s+products|enterprises|traders|manufacturers?)\b",
     re.I,
 )
+def _entity_fragment(value):
+    """Keep the company/entity portion when OCR puts the address on the same line."""
+    value=_norm(value).strip(" :-.,;")
+    company=_COMPANY_SUFFIX_RE.search(value)
+    if company:
+        suffix_end=company.end()
+        comma=value.find(",",suffix_end)
+        if 0 <= comma-suffix_end <= 80:
+            return value[:suffix_end].strip(" :-.,;")
+    return value
+
+
 _ADDRESS_RE=re.compile(
     r"\b(?:road|rd\.?|street|st\.?|lane|ln\.?|avenue|ave\.?|industrial\s+area|estate|plot|floor|building|bldg|sector|block|district|dist\.?|taluka|tehsil|village|nagar|colony|pin(?:code)?|postcode|zip|near|opp\.?|opposite|phase|highway|city|state)\b",
     re.I,
@@ -170,17 +165,24 @@ def _manufacturer_candidates(text,ocr,label_row=None):
         stops=[m.start() for m in stops if m]
         if stops:
             tail=tail[:min(stops)]
-        for line in re.split(r"\n+",tail):
+        other_labels=[]
+        for key,patterns in LABELS.items():
+            if key!="manufacturer_packer_importer":
+                other_labels.extend(patterns)
+        for line in re.split(r"\n+",tail)[:5]:
             value=_norm(line).strip(" :-.,;")
-            if value:
-                candidates.append((value,50,None))
+            if not value:
+                continue
+            if any(re.search(pattern,value,re.I) for pattern in other_labels):
+                break
+            candidates.append((value,60,None))
     return candidates
 
 def _manufacturer_value(candidates):
     ranked=[]
     seen=set()
     for value,base_score,evidence in candidates:
-        value=_norm(value)
+        value=_entity_fragment(value)
         if len(value)<3:
             continue
         key=value.lower()
@@ -305,8 +307,6 @@ def _consumer(text,ocr):
         if _label_match(label,LABELS["consumer_care"]):
             near=_nearby_values(row,ocr,lambda x:bool(EMAIL_RE.search(x) or PHONE_RE.search(x)),1500)
             if near:return _result(True,f"{label} {near[0][1].get('text')}",_evidence(near[0][1]))
-    email=EMAIL_RE.search(text); phone=PHONE_RE.search(text)
-    if email or phone:return _result(True,(email or phone).group(0))
     return _result(bool(pattern),pattern.group(0) if pattern else None,None,bool(pattern))
 
 def extract_declarations(raw_text,compliance_text=None,ocr_data=None):
