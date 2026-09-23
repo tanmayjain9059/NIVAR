@@ -1,28 +1,86 @@
-"""Conservative, bounded allergen declaration extraction."""
+"""Conservative allergen declaration extraction."""
+
 import re
 
-_STOP = re.compile(r"\b(?:manufactured|packed|marketed|imported|customer\s+care|consumer\s+care|address|phone|tel|toll[-\s]?free|www\.|ingredients?|nutrition|nutritional|mrp|net\s*(?:qty|quantity)|batch|best\s+before|use\s+by|expiry)\b", re.I)
-_DECL = re.compile(r"\b(may\s+contain|may\s+contains|contains)\b\s*([^.!?\n]+)", re.I)
+_DECL = re.compile(
+    r"\b(may\s+contain(?:s)?|contains)\b\s*([^.!?\n]+)",
+    re.I,
+)
 
-def _norm(x): return re.sub(r"\s+"," ",str(x or "")).strip()
-def _items(value):
-    value=re.sub(r"\s*&\s*",",",value)
-    value=re.sub(r"\s+(?:and)\s+",",",value,flags=re.I)
-    out=[]
-    for item in value.split(","):
-        item=_norm(item).strip(" .;:-")
-        if 2<=len(item)<=60 and not re.search(r"\d{3,}",item): out.append(item)
-    return out
+_STOP = re.compile(
+    r"\b(?:manufactured|packed|marketed|imported|customer\s+care|"
+    r"consumer\s+care|address|phone|tel|toll[-\s]?free|www\.|ingredients?|"
+    r"nutrition|nutritional|mrp|net\s*(?:qty|quantity)|batch|best\s+before|"
+    r"use\s+by|expiry)\b",
+    re.I,
+)
 
-def parse_allergens(text):
-    contains=[]; may=[]
-    if not text: return contains,may
-    normalized=_norm(text)
+_ALLOWED = {
+    "wheat": "Wheat",
+    "milk": "Milk",
+    "soy": "Soy",
+    "soya": "Soy",
+    "peanut": "Peanut",
+    "groundnut": "Peanut",
+    "sesame": "Sesame",
+    "mustard": "Mustard",
+    "tree nuts": "Tree Nuts",
+    "tree nut": "Tree Nuts",
+    "nuts": "Tree Nuts",
+    "nut": "Tree Nuts",
+    "almond": "Tree Nuts",
+    "almonds": "Tree Nuts",
+    "cashew": "Tree Nuts",
+    "cashews": "Tree Nuts",
+}
+
+_CANONICAL_PATTERNS = sorted(
+    _ALLOWED.items(),
+    key=lambda item: len(item[0]),
+    reverse=True,
+)
+
+
+def _norm(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _extract_known_allergens(value: str) -> list[str]:
+    value = _norm(value).lower()
+    found = []
+
+    # Match known allergen phrases only. This intentionally discards
+    # arbitrary OCR text that follows a valid declaration.
+    for alias, canonical in _CANONICAL_PATTERNS:
+        if re.search(rf"\b{re.escape(alias)}\b", value):
+            if canonical not in found:
+                found.append(canonical)
+
+    return found
+
+
+def parse_allergens(text: str) -> tuple[list[str], list[str]]:
+    normalized = _norm(text)
+
+    if not normalized:
+        return [], []
+
+    contains = []
+    may_contain = []
+
     for match in _DECL.finditer(normalized):
-        kind,value=match.group(1).lower(),match.group(2)
-        stop=_STOP.search(value)
-        if stop: value=value[:stop.start()]
-        values=_items(value)
-        if kind.startswith("may"): may.extend(values)
-        else: contains.extend(values)
-    return list(dict.fromkeys(contains)),list(dict.fromkeys(may))
+        kind = match.group(1).lower()
+        value = match.group(2)
+
+        stop = _STOP.search(value)
+        if stop:
+            value = value[:stop.start()]
+
+        values = _extract_known_allergens(value)
+
+        if kind.startswith("may"):
+            may_contain.extend(values)
+        else:
+            contains.extend(values)
+
+    return list(dict.fromkeys(contains)), list(dict.fromkeys(may_contain))
