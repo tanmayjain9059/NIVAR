@@ -51,10 +51,10 @@ def _spatial(df):
     return result
 
 def parse_nutrition_text(text,ocr_data=None):
-    if not text: return {}
+    lines=[x.strip() for x in str(text or "").splitlines() if x.strip()]
     spatial=_spatial(ocr_data) if ocr_data is not None else {}
-    if spatial: return spatial
-    lines=[x.strip() for x in str(text).splitlines() if x.strip()]
+    if not lines and not spatial:
+        return {}
     result={}
     ordered=sorted(NUTRIENTS,key=len,reverse=True)
     for i,line in enumerate(lines):
@@ -68,7 +68,12 @@ def parse_nutrition_text(text,ocr_data=None):
                 if any(_label(nxt,o) for o in ordered if o!=n): break
                 values=_numbers(nxt)
                 if values: break
-        if values: result[n]={"value":values[0],"unit":_unit(n)}
+        if values and n not in result:
+            result[n]={"value":values[0],"unit":_unit(n)}
+    # Spatial OCR is preferred where available, but text parsing fills
+    # nutrients that geometry could not associate reliably.
+    for nutrient,item in spatial.items():
+        result[nutrient]=item
     return result
 
 def parse_nutrition_table(roi,config):
