@@ -200,10 +200,19 @@ def clean_word(text):
 def extract_rows_from_region(data, region, min_overlap=0.20):
     """Return OCR rows whose boxes overlap a logical section."""
 
+    columns = [
+        "text",
+        "left",
+        "top",
+        "width",
+        "height",
+        "right",
+        "bottom",
+        "conf",
+    ]
+
     if data is None or getattr(data, "empty", True) or region is None:
-        return pd.DataFrame(
-            columns=["text", "left", "top", "width", "height", "right", "bottom", "conf"]
-        )
+        return pd.DataFrame(columns=columns)
 
     x1 = int(region["x"])
     y1 = int(region["y"])
@@ -221,8 +230,14 @@ def extract_rows_from_region(data, region, min_overlap=0.20):
         except (TypeError, ValueError, KeyError):
             continue
 
-        overlap_width = max(0, min(right, x2) - max(left, x1))
-        overlap_height = max(0, min(bottom, y2) - max(top, y1))
+        overlap_width = max(
+            0,
+            min(right, x2) - max(left, x1),
+        )
+        overlap_height = max(
+            0,
+            min(bottom, y2) - max(top, y1),
+        )
         overlap_area = overlap_width * overlap_height
         area = max(1, (right - left) * (bottom - top))
 
@@ -234,9 +249,7 @@ def extract_rows_from_region(data, region, min_overlap=0.20):
             selected.append(row.to_dict())
 
     if not selected:
-        return pd.DataFrame(
-            columns=data.columns if hasattr(data, "columns") else [],
-        )
+        return pd.DataFrame(columns=columns)
 
     result = pd.DataFrame(selected)
 
