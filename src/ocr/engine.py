@@ -137,7 +137,7 @@ def _run_paddle(image_path, coordinate_scale=1.0, language="en"):
                 data[column] * coordinate_scale
             ).round().astype(int)
 
-    raw_text = "\\n".join(
+    raw_text = "\n".join(
         str(line.get("text", "")).strip()
         for line in result.get("lines", [])
         if str(line.get("text", "")).strip()
@@ -277,8 +277,7 @@ def extract_text_from_region(data, region, min_overlap=0.20):
     if rows.empty:
         return ""
 
-    return "
-".join(
+    return "\n".join(
         str(value).strip()
         for value in rows["text"].tolist()
         if str(value).strip()
