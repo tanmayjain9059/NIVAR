@@ -338,10 +338,41 @@ def _merge_adjacent_front_panel_candidates(ocr_data, candidates):
     return sorted(dedup.values(), key=lambda item: item["score"], reverse=True)
 
 
+def _line_level_product_candidates(raw_text: str):
+    candidates = []
+    for index, line in enumerate(
+        line.strip() for line in str(raw_text or "").splitlines()
+    ):
+        if not line:
+            continue
+        candidate = _clean_candidate(line)
+        if not _candidate_is_generic_food_name(candidate):
+            continue
+        if not _CATEGORY_RE.search(candidate):
+            continue
+        score = 45.0
+        words = len(candidate.split())
+        if 1 <= words <= 8:
+            score += 10
+        if 4 <= len(candidate) <= 80:
+            score += 5
+        if index < 10:
+            score += 15
+        if NUTRITION_CONTEXT_RE.search(candidate):
+            score -= 60
+        candidates.append({
+            "value": candidate,
+            "score": score,
+            "confidence": 0.50,
+            "evidence": None,
+            "source": "global_ocr_front_panel_candidate",
+        })
+    return candidates
+
+
 def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
     explicit_products, explicit_brands = _explicit_candidates(ocr_data)
 
-    # A product-name declaration is stronger than visual/layout inference.
     semantic_products = _product_label_candidates(raw_text, ocr_data)
     if semantic_products:
         selected_product = max(
@@ -349,29 +380,28 @@ def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
             key=lambda item: (item["score"], item["confidence"]),
         )
     else:
-        front_candidates = _front_panel_candidates(ocr_data, raw_text)
         front_candidates = _merge_adjacent_front_panel_candidates(
             ocr_data,
-            front_candidates,
+            _front_panel_candidates(ocr_data, raw_text),
         )
+        line_candidates = _line_level_product_candidates(raw_text)
 
-        # Existing explicit candidates remain compatible, but only accept
-        # them if they describe a plausible food and are not merely branding.
         fallback_explicit = [
             item for item in explicit_products
             if _candidate_is_generic_food_name(item["value"])
         ]
 
-        all_candidates = front_candidates + fallback_explicit
+        all_candidates = front_candidates + line_candidates + fallback_explicit
         selected_product = None
         if all_candidates:
             best = max(
                 all_candidates,
-                key=lambda item: (item.get("score", item["confidence"] * 100), item["confidence"]),
+                key=lambda item: (
+                    item.get("score", item["confidence"] * 100),
+                    item["confidence"],
+                ),
             )
-            # Conservative threshold: absence of a confident semantic product
-            # name becomes REVIEW/null rather than a fabricated identity.
-            if best.get("score", 0) >= 68:
+            if best.get("score", 0) >= 45:
                 selected_product = best
 
     selected_brand = (
@@ -380,6 +410,28 @@ def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
         else None
     )
 
+    candidates_for_output = []
+    if semantic_products:
+        candidates_for_output = semantic_products
+    else:
+        candidates_for_output = (
+            _merge_adjacent_front_panel_candidates(
+                ocr_data,
+                _front_panel_candidates(ocr_data, raw_text),
+            )
+            + _line_level_product_candidates(raw_text)
+        )
+        dedup = {}
+        for item in candidates_for_output:
+            key = item["value"].lower()
+            if key not in dedup or item["score"] > dedup[key]["score"]:
+                dedup[key] = item
+        candidates_for_output = sorted(
+            dedup.values(),
+            key=lambda item: (item.get("score", 0), item["confidence"]),
+            reverse=True,
+        )
+
     return {
         "product_name": selected_product["value"] if selected_product else None,
         "product_name_confidence": selected_product["confidence"] if selected_product else None,
@@ -387,17 +439,6 @@ def identify_product(raw_text: str, ocr_data=None) -> dict[str, Any]:
         "brand": selected_brand["value"] if selected_brand else None,
         "brand_confidence": selected_brand["confidence"] if selected_brand else None,
         "brand_evidence": selected_brand["evidence"] if selected_brand else None,
-        "product_name_candidates": (
-            semantic_products[:5]
-            if semantic_products
-            else (
-                _merge_adjacent_front_panel_candidates(
-                    ocr_data,
-                    _front_panel_candidates(ocr_data, raw_text),
-                )[:5]
-                if ocr_data is not None
-                else []
-            )
-        ),
+        "product_name_candidates": candidates_for_output[:10],
         "brand_candidates": explicit_brands[:5],
     }
