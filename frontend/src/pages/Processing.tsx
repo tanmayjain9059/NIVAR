@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useState} from "react";
 import {motion} from "framer-motion";
-import {analyzeImages,OCRLanguage} from "../api/analyzer";
+import {analyzeImages} from "../api/analyzer";
+import type {OCRLanguage} from "../api/analyzer";
 import type {AnalyzeResponse} from "../types/analyzer";
 import {ScanLine,AlertCircle,CheckCircle2,Loader2} from "lucide-react";
 
