@@ -20,7 +20,8 @@ from fastapi import (
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse\nfrom fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.services.analyzer_service import (
     analyze_image,
@@ -82,11 +83,15 @@ ALLOWED_EXTENSIONS = {
 
 @app.get("/")
 def root():
+    frontend_index = Path("frontend/dist/index.html")
+    if frontend_index.exists():
+        return FileResponse(frontend_index)
     return {
         "success": True,
         "api_version": "v1",
         "service": "Packaged Commodity Compliance Analyzer",
         "status": "running",
+        "ui": "Frontend build not found. Run npm run dev in frontend or use Docker.",
     }
 
 
@@ -573,4 +578,9 @@ def get_scan_report(
             f"compliance_report_"
             f"{safe_scan_id}.pdf"
         ),
-    )\n\n# Production frontend assets. API routes above keep their /api/* paths.\nfrontend_dist = Path("frontend/dist")\nif frontend_dist.exists():\n    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")\n
+    )
+
+# Production frontend assets. API routes above keep their /api/* paths.
+frontend_dist = Path("frontend/dist")
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")\n
