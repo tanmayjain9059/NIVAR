@@ -111,34 +111,34 @@ def _candidate_is_generic_food_name(value: str) -> bool:
         return False
     if _COMPANY_RE.search(value) or _ADDRESS_RE.search(value):
         return False
-    if re.search(r"\\b(?:manufactured|packed|marketed|imported)\\s+by\\b", value, re.I):
+    if re.search(r"\b(?:manufactured|packed|marketed|imported)\s+by\b", value, re.I):
         return False
-    if re.search(r"\\b(?:brand|trademark|tm|®)\\b", value, re.I):
+    if re.search(r"\b(?:brand|trademark|tm|®)\b", value, re.I):
         return False
     return True
 
 
 _COMPANY_RE = re.compile(
-    r"\\b(?:pvt\\.?\\s*ltd\\.?|private\\s+limited|ltd\\.?|limited|llp|"
-    r"inc\\.?|incorporated|corp\\.?|corporation|co\\.?|company|industries|"
-    r"foods|food\\s+products|enterprises|traders|manufacturers?)\\b",
+    r"\b(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|llp|"
+    r"inc\.?|incorporated|corp\.?|corporation|co\.?|company|industries|"
+    r"foods|food\s+products|enterprises|traders|manufacturers?)\b",
     re.I,
 )
 _ADDRESS_RE = re.compile(
-    r"\\b(?:plot|road|street|lane|avenue|industrial\\s+area|estate|sector|"
+    r"\b(?:plot|road|street|lane|avenue|industrial\s+area|estate|sector|"
     r"block|district|taluka|tehsil|village|nagar|colony|pin(?:code)?|postcode|"
-    r"zip|near|opposite|opp\\.?|phase|highway|city|state)\\b",
+    r"zip|near|opposite|opp\.?|phase|highway|city|state)\b",
     re.I,
 )
 _CATEGORY_RE = re.compile(
-    r"\\b(?:rice|basmati|flour|atta|maida|suji|sooji|dal|lentil|pulses?|"
-    r"wheat|oats?|poha|flattened\\s+rice|noodles?|pasta|biscuit(?:s)?|"
+    r"\b(?:rice|basmati|flour|atta|maida|suji|sooji|dal|lentil|pulses?|"
+    r"wheat|oats?|poha|flattened\s+rice|noodles?|pasta|biscuit(?:s)?|"
     r"cookies?|bread|rusk|namkeen|snack(?:s)?|chips?|mixture|cereal(?:s)?|"
     r"corn(?:flakes)?|muesli|chocolate|cocoa|tea|coffee|juice|drink|beverage|"
     r"milk|curd|yogurt|ghee|butter|cheese|oil|pickle|jam|sauce|ketchup|"
     r"spice(?:s)?|masala|salt|sugar|honey|jaggery|noodles?|vermicelli|"
     r"semolina|gram|chana|rajma|peas?|nuts?|almonds?|cashews?|"
-    r"seasoning|powder|mix|blend|paste)\\b",
+    r"seasoning|powder|mix|blend|paste)\b",
     re.I,
 )
 
