@@ -611,7 +611,7 @@ def process_image(file_path, config=CONFIG):
     if engine_name == "paddle":
 
         nutrition = parse_nutrition_text(
-            nutrition_text,
+            "\n".join(part for part in (nutrition_text, raw_text) if part),
             ocr_data=data,
         )
 
@@ -622,12 +622,21 @@ def process_image(file_path, config=CONFIG):
             config,
         )
 
+    # Section OCR is the primary signal, while global OCR provides a
+    # recall fallback when a region detector clips or misses visible text.
+    ingredients_source = "\n".join(
+        part for part in (ingredients_text, raw_text) if part
+    )
+    allergens_source = "\n".join(
+        part for part in (allergen_text, raw_text) if part
+    )
+
     ingredients = parse_ingredients(
-        ingredients_text,
+        ingredients_source,
     )
 
     contains, may_contain = parse_allergens(
-        allergen_text,
+        allergens_source,
     )
 
     # --------------------------------------------------------
