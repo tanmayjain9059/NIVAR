@@ -206,7 +206,30 @@ def _manufacturer(text,ocr):
         label_text=_norm(pattern.group(0) if pattern else (
             label_rows[0].get("text") if label_rows else "Manufacturer/Packer/Importer"
         ))
-        return _result(True,f"{label_text} {value}",evidence)
+
+        # Legal Metrology requires the manufacturer's/packer's/importer's
+        # name AND address. Keep the UI value focused on the entity name,
+        # but retain address evidence separately and require it for FOUND.
+        address_candidates=[]
+        for line in re.split(r"\n+", text):
+            line=_norm(line)
+            if not line or line.lower()==value.lower():
+                continue
+            if _ADDRESS_RE.search(line) and not _label_match(line,LABELS["manufacturer_packer_importer"]):
+                address_candidates.append(line)
+        address=address_candidates[0] if address_candidates else None
+
+        result=_result(
+            True,
+            f"{label_text} {value}",
+            evidence,
+            value_missing=not bool(address),
+        )
+        result["manufacturer_name"]=value
+        result["address_detected"]=bool(address)
+        if address:
+            result["address_text"]=address
+        return result
 
     if pattern:
         return _result(True,pattern.group(0),None,True)
