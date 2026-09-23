@@ -128,6 +128,36 @@ def _valid_candidate(text: str) -> bool:
     return len(text.split()) <= 10
 
 
+def _clean_manufacturer_brand(value: str) -> str:
+    """Turn a manufacturer-role value into a conservative brand candidate."""
+    value = _clean(value)
+
+    stop = re.search(
+        r"\b(?:fssai|licen[cs]e|plot|road|street|lane|avenue|industrial\s+area|"
+        r"estate|sector|block|district|taluka|tehsil|village|nagar|colony|"
+        r"pin(?:code)?|postcode|zip|near|opposite|opp\.?|phase|highway|"
+        r"city|state|phone|tel|toll[-\s]?free|customer\s+care|"
+        r"consumer\s+care|www\.|@)\b",
+        value,
+        re.I,
+    )
+    if stop:
+        value = value[:stop.start()]
+
+    value = _clean(value)
+
+    value = re.sub(
+        r"\s+(?:pvt\.?\s*ltd\.?|private\s+limited|ltd\.?|limited|"
+        r"llp|inc\.?|incorporated|corp\.?|corporation|company|"
+        r"industries|food\s+products|enterprises|traders|manufacturers?)\.?$",
+        "",
+        value,
+        flags=re.I,
+    )
+
+    return _clean(value)
+
+
 def _score(
     text: str,
     confidence: float,
@@ -259,7 +289,7 @@ def _explicit_candidates(ocr_data):
         match = MANUFACTURER_RE.search(text)
         if match:
             candidate = _candidate(
-                match.group(1),
+                _clean_manufacturer_brand(match.group(1)),
                 row,
                 confidence=min(confidence, 0.9),
                 source="manufacturer_entity",
